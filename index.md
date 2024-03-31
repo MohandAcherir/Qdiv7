@@ -1,4 +1,4 @@
-## Welcome, *this is my personal blog for various information security topics*.
+### Welcome, *this is my personal blog for various information security topics*.
 
 > Here is a bounch of amazing articles about various topics in InfoSec: [My articles](https://www.google.com).
 
