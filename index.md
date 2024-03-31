@@ -1,7 +1,8 @@
 ### Welcome, *this is my personal blog for various information security topics*.
 
 
-
-
 ## Writeups
-> Here is a bounch of amazing writeups for various CTFs in which i participated: [My writeUps](https://www.google.com)
+> Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com)
+
+## Articles
+> Here is an amazing article about an amazing topic: [writeupArticle](https://www.google.com)
