@@ -1,2 +1,4 @@
 theme: minima
 title: 'My InfoSec blog'
+minima:
+  skin: dark
