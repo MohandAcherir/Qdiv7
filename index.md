@@ -1,4 +1,4 @@
-## My articles
-> Here is a bounch of amazing articles about various topics and InfoSec
-## My writeUps
-> Here is a bounch of amazing writeups for various CTFs in which i participated
+> Here is a bounch of amazing articles about various topics in InfoSec.
+# [My articles](https://www.google.com)
+> Here is a bounch of amazing writeups for various CTFs in which i participated.
+# [My writeUps](https://www.google.com)
