@@ -1,3 +1,1 @@
-layout: page
-title: "AD attack"
-permalink: /writeups/
+## It is coming
