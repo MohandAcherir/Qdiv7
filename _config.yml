@@ -1,4 +1,6 @@
-theme: minima
 title: 'My InfoSec blog'
+remote_theme: jekyll/minima
+plugins:
+  - jekyll-remote-theme
 minima:
   skin: dark
