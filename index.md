@@ -2,7 +2,7 @@
 
 
 ## Writeups
-> Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com)
+Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com)
 
 ## Articles
-> Here is an amazing article about an amazing topic: [writeupArticle](https://www.google.com)
+Here is an amazing article about an amazing topic: [writeupArticle](https://www.google.com)
