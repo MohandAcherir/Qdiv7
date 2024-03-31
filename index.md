@@ -2,7 +2,7 @@
 > The focus is mainly on CTF writeups and HTB walkthroughs
 
 ## Writeups
-Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com).\
+Here is an amazing writeup about an amazing challenge: [writeupName]([https://www.google.com](https://github.com/MohandAcherir/Qdiv7/blob/main/writeups/write1.md)).\
 Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com).
 
 ## Articles
