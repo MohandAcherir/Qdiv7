@@ -9,12 +9,16 @@ i've decided to write this article in order to clarify this for good.
 
 Just like the for the formats ```%x```, ```%s```, ```%p```, ```%d``` ...etc which are used to print a variable\
 for example :\
+
 ```printf("%x", some_variable);``` which prints the value of ```some_variable``` in hexadecimal, if we do :\
 ```printf("%n", &some_variable);``` - and here's most important thing to understand in this article - the value of ```some_variable```\
 will contain the number of characters before ```%n``` in the first argument of ```printf```; \
+
 in this case, there's 0 characters before ```%n```\
 so ```some_variable``` has the value 0.\
-To put it simply, the format ```%n``` is used to count the number of characters printed prior to ```%n```.\
+To put it simply, the format ```%n``` is used to count the number of characters printed prior to ```%n```.
+
+
 
 **Here are other examples:**
 
