@@ -22,7 +22,7 @@ So, to put it simply, the format ```%n``` is used to count the number of charact
 
 
 ```printf("HelloAA%n", &some_variable);```. In this case, the first argument to ```printf``` is "HelloAA%n", thus\
-```some_variable``` has the value 6, because "HelloAA" is before ```%n``` and has length 4.
+```some_variable``` has the value 6, because "HelloAA" is before ```%n``` and has length 6.
 
 And here's another interesting one slightly different:
 
