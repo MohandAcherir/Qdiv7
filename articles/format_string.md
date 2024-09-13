@@ -1,7 +1,7 @@
 # Format string vulnerability explained
 
 In this article, i'll try to explain as clearly as possible the format string\
-vulnerability, especially writing with ```%n/```. I've read many articles on\
+vulnerability, especially writing with ```%n```. I've read many articles on\
 this topic, and almost all of them can be very confusing; that's why i've\
 decided to write this article in order to clarify this for good.
 
@@ -40,8 +40,8 @@ And here's another interesting one slightly different:
 
 ```printf("Hello%nAA%n", &some_variable1, &some_variable2);```.\
 Just by following the definition, the first argument to ```printf``` is "Hello%nAA%n";\
-thus, the first ```%n``` will contain 4 (the length of "Hello"), and the second ```%n```\
-will contain all which is before it, namely "HelloAA", thus 6. So ```some_variable1``` \
+thus, the first ```%n``` will read 4 (the length of "Hello"), and the second ```%n```\
+will read all which is before it, namely "HelloAA", thus 6. So ```some_variable1``` \
 has the value 4 and ```some_variable2``` has the value 6.
 
 
