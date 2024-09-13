@@ -23,14 +23,16 @@ To put it simply, the format ```%n``` is used to count the number of characters 
 **Here are other examples:**
 
 
-```printf("Hello%nAA", &some_variable);```: in this case, the first argument to ```printf``` is "Hello%nAA", thus\
+1. ```printf("Hello%nAA", &some_variable);```: in this case, the first argument to ```printf``` is "Hello%nAA", thus\
 ```some_variable``` has the value 4, because "Hello" is before ```%n``` and has length 4. ("AA" is after ```%n``` in the string, so it does not count).\
 
 
-```printf("HelloAA%n", &some_variable);```. In this case, the first argument to ```printf``` is "HelloAA%n", thus\
+2. ```printf("HelloAA%n", &some_variable);```. In this case, the first argument to ```printf``` is "HelloAA%n", thus\
 ```some_variable``` has the value 6, because "HelloAA" is before ```%n``` and has length 6.\
 
+
 And here's another interesting one slightly different:
+
 
 ```printf("Hello%nAA%n", &some_variable1, &some_variable2);```.
 Just by following the definition, the first argument to ```printf``` is "Hello%nAA%n", thus
