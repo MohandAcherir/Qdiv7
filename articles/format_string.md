@@ -22,7 +22,7 @@ printed prior to ```%n```.
 
 
 
-**Here are other examples:**
+**Some other examples:**
 
 
 1. ```printf("Hello%nAA", &some_variable);```: in this case, the first argument\
@@ -35,7 +35,7 @@ to ```printf``` is "HelloAA%n", thus, ```some_variable``` has the value 6, becau
 "HelloAA" is before ```%n``` and has length 6.
 
 
-And here's another interesting one slightly different:
+And here's a slightly different one:
 
 
 ```printf("Hello%nAA%n", &some_variable1, &some_variable2);```.\
