@@ -50,7 +50,9 @@ With all this in mind, the rest of the exploitation is fairly simple.
 
 ### Variants of `%n` in C
 
-In C, the format specifiers `%n` and its variants are used with the `printf` family of functions to store the number of characters printed so far into the provided argument. Below is a list of commonly used variants:
+In C, the format specifiers `%n` and its variants are used with the `printf` family of\
+functions to store the number of characters printed so far into the provided argument.\
+Below is a list of commonly used variants:
 
 1. **`%n`**:  
    Stores the number of characters printed so far as an `int` into the argument.
