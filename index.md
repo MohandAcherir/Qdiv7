@@ -6,4 +6,4 @@ Here is an amazing writeup about an amazing challenge: [writeupName](https://moh
 Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com).
 
 ## Articles
-Format String vulnerability - CLEARLY - explained: [Article](https://www.google.com]](https://mohandacherir.github.io/Qdiv7/writeups/writeup1.html)).\
+Format String vulnerability - CLEARLY - explained: [Article](https://mohandacherir.github.io/Qdiv7/writeups/writeup1.html).
