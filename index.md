@@ -1,5 +1,5 @@
 ### Welcome, *this is my personal blog for various information security topics*.
-> The focus is mainly on CTF writeups and HTB walkthroughs
+> The focus is mainly on CTF writeups and articles, and various other security related stuff
 
 ## Writeups
 Here is an amazing writeup about an amazing challenge: [writeupName](https://mohandacherir.github.io/Qdiv7/writeups/writeup1.html).\
