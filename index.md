@@ -6,4 +6,6 @@ Here is an amazing writeup about an amazing challenge: [writeupName](https://moh
 Here is an amazing writeup about an amazing challenge: [writeupName](https://www.google.com).
 
 ## Articles
-Format String vulnerability - CLEARLY - explained: [Article](https://mohandacherir.github.io/Qdiv7/articles/format_string.html).
+[Format String vulnerability - CLEARLY - explained]:(https://mohandacherir.github.io/Qdiv7/articles/format_string.html).
+
+[Active Directory Pentesting Basics](https://mohandacherir.github.io/Qdiv7/articles/AD_basics.html)
