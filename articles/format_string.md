@@ -1,15 +1,13 @@
 # Format string vulnerability explained
 
-In this article, i'll try to explain as clearly as possible the format string\
-vulnerability, especially writing with ```%n```. I've read many articles on\
-this topic, and almost all of them can be very confusing; that's why i've\
-decided to write this article in order to clarify this for good.
+In this article, i'll try to explain as clearly as possible the format string vulnerability, especially writing with ```%n```.\
+I've read many articles on this topic, and almost all of them can be very confusing; that's why i've decided to write this article\
+in order to clarify this for good.
 
 
 ### First things first
 
-Just like the for the formats ```%x```, ```%s```, ```%p```, ```%d``` ...etc which 
-are used to print a variable. For example :
+Just like the for the formats ```%x```, ```%s```, ```%p```, ```%d``` ...etc which are used to print a variable. For example :
 
 ```printf("%x", some_variable);``` which prints the value of ```some_variable``` in\
 hexadecimal, if we do : ```printf("%n", &some_variable);``` - here's most important\
