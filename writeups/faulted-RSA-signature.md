@@ -146,4 +146,4 @@ print(bytes.fromhex(flag).decode("utf-8", 'ignore'))
 
 Après l'exécution du script, on obtient:
 
-![](../pictures/Screenshot 2024-10-01 223750.png)
+![]([../pictures/Screenshot 2024-10-01 223750.png](https://github.com/MohandAcherir/Qdiv7/blob/e2a901b1e7237c8860e5079d141fe6e6badf8999/pictures/Screenshot%202024-10-01%20223750.png))
