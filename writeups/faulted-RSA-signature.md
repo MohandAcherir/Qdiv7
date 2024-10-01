@@ -146,4 +146,4 @@ print(bytes.fromhex(flag).decode("utf-8", 'ignore'))
 
 Après l'exécution du script, on obtient:
 
-![screen_flag](https://mohandacherir.github.io/Qdiv7/pictures/Screenshot-2024-10-01-223750.png)
+![screen_flag](https://mohandacherir.github.io/Qdiv7/pictures/Screenshot-2024-10-01-223750.html)
