@@ -146,4 +146,4 @@ print(bytes.fromhex(flag).decode("utf-8", 'ignore'))
 
 Après l'exécution du script, on obtient:
 
-![]()
+![](../pictures/Screenshot 2024-10-01 223750.png)
