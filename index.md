@@ -2,8 +2,6 @@
 > The focus is mainly on CTF writeups and articles, and various other security related stuff
 
 ## Writeups
-[RSA - Faulted signature attack](https://mohandacherir.github.io/Qdiv7/writeups/faulted-RSA-signature.html)
-
 [RSA - Faulted signature attack](./writeups/faulted-RSA-signature.md)
 
 ## Articles
