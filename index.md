@@ -2,10 +2,10 @@
 > The focus is mainly on CTF writeups and articles, and various other security related stuff
 
 ## Writeups
-[RSA - Faulted signature attack](https://mohandacherir.github.io/Qdiv7/writeups/faulted-RSA-signature.html).
-
+[RSA - Faulted signature attack](https://mohandacherir.github.io/Qdiv7/writeups/faulted-RSA-signature.html)
+[RSA - Faulted signature attack](./writeups/faulted-RSA-signature.md)
 ## Articles
-[Format String vulnerability - CLEARLY - explained](https://mohandacherir.github.io/Qdiv7/articles/format_string.html).
+[Format String vulnerability - CLEARLY - explained](https://mohandacherir.github.io/Qdiv7/articles/format_string.html)
 
 [Active Directory Pentesting Basics](https://mohandacherir.github.io/Qdiv7/articles/AD_basics.html)
 
