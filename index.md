@@ -7,7 +7,7 @@
 ## Articles
 [Format String vulnerability - CLEARLY - explained](https://mohandacherir.github.io/Qdiv7/articles/format_string.html)
 
-[Heap exploitation basics](https://mohandacherir.github.io/Qdiv7/articles/heap_exploitation.md)
+[Heap exploitation basics](./articles/heap_exploitation.md)
 
 [Active Directory Pentesting Basics](https://mohandacherir.github.io/Qdiv7/articles/AD_basics.html)
 
