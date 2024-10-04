@@ -2,7 +2,7 @@
   <link rel="stylesheet" href="./style/styles.css">
 </head>
 
-<span style="color: white;">
+<p class="yellow-text">
 ### Welcome, *this is my personal blog for various information security topics*.
 > The focus is mainly on CTF writeups and articles, and various other security related stuff
 
@@ -17,4 +17,4 @@
 [Active Directory Pentesting Basics](https://mohandacherir.github.io/Qdiv7/articles/AD_basics.html)
 
 [ARM architecture basics](https://mohandacherir.github.io/Qdiv7/articles/ARM_basics.html)
-</span>
+</p>
