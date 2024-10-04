@@ -1,13 +1,5 @@
 <head>
-  <style>
-    body {
-      background-image: url('https://example.com/path-to-your-image.jpg');
-      background-size: cover; /* or 'contain', 'auto', etc. */
-      background-repeat: no-repeat;
-      background-attachment: fixed; /* This keeps the image fixed during scroll */
-      background-position: center;
-    }
-  </style>
+  <link rel="stylesheet" href="style/styles.css">
 </head>
 
 ### Welcome, *this is my personal blog for various information security topics*.
