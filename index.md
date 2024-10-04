@@ -1,5 +1,5 @@
 <head>
-  <link rel="stylesheet" href="style/styles.css">
+  <link rel="stylesheet" href="./style/styles.css">
 </head>
 
 ### Welcome, *this is my personal blog for various information security topics*.
