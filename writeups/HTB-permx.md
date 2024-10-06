@@ -22,11 +22,12 @@ There's no available exploit for this version of Openssh, and passwordless conne
 The http server redirects to `permx.htb/`, so i added `10.10.11.23 permx.htb` to `/etc/hosts`: ``` sudo echo "10.10.11.23 permx.htb >> /etc/hosts"```.
 
 The website "permx.htb" isn't interesting in itself, so i enumerated potential subdomains:
+
 ![subdom_enum](../pictures/permx-walk/Screenshot-2024-10-04-231033.png)
 
 
 So, "lms.permx.htb" gives to a Chamilo login portal:
 
-![login]()
+![login](../pictures/permx-walk/Screenshot-2024-10-04-231601.png)
 
 I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE,
