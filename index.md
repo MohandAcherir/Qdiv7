@@ -7,6 +7,7 @@
 
 ## Writeups
 **[RSA - Faulted signature attack](./writeups/faulted-RSA-signature.md)**
+**[Hack The Box - Permx](./writeups/HTB-permx.md)**
 
 ## Articles
 
