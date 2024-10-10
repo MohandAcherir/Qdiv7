@@ -2,7 +2,8 @@
 **OS**: Linux, **Difficulty**: Easy
 
 
-### Enumeration
+## Enumeration
+
 
 Ports scan: ```nmap -p- -sCV 10.10.11.23```
 ```
@@ -19,7 +20,7 @@ Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel
 
 
 There's no available exploit for this version of Openssh, and passwordless connexions are not possible.\
-The http server redirects to `permx.htb/`, so i added `10.10.11.23 permx.htb` to `/etc/hosts`: ``` sudo echo "10.10.11.23 permx.htb >> /etc/hosts"```.
+The http server redirects to `permx.htb/`, so i added `10.10.11.23 permx.htb` to `/etc/hosts`: ``` echo "10.10.11.23 permx.htb" | sudo tee -a /etc/hosts"```.
 
 The website "permx.htb" isn't interesting in itself, so i enumerated potential subdomains:
 
@@ -29,5 +30,56 @@ The website "permx.htb" isn't interesting in itself, so i enumerated potential s
 So, "lms.permx.htb" gives to a Chamilo login portal:
 
 ![login](../pictures/permx-walk/Screenshot-2024-10-04-231601.png)
+I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE in 'chamilo', and just like that, i found CVE-2023-4220 and [its exploit on github](https://github.com/Ziad-Sakr/Chamilo-CVE-2023-4220-Exploit), which allows us to upload a `.php` webshell.
 
-I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE,
+
+
+
+
+## Exploitation
+
+![webshell](../pictures/permx-walk/Screenshot-2024-10-04-235544.png)
+After uploading the webshell file, i've setup a local simple webserver and queried it from the boxe's host using the webshell, for the sake of checking its usability.
+
+![server](../pictures/permx-walk/Screenshot-2024-10-05-001412.png)
+
+And just like that, i got a `www-data` shell with the command: `./CVE-2023-4220.sh -f webshell.php -h http://10.10.11.23 -p 5555` 
+
+![shell](../pictures/permx-walk/Screenshot-2024-10-05-021703.png)
+
+
+From there, i found a username 'mtz',and i enumerated all the possible vectors to obtain a privilege escalation, but nothing interesting. But after some reseach on chamilo, i found that the configuration file in `app/config/configuration` may contain interesting information:
+
+![db](../pictures/permx-walk/Screenshot-2024-10-05-142548.png)
+
+
+
+
+
+
+## Shell as mtz
+
+At first, i went through, what might have been, a dead end, by trying to query the DB and gain admin credentials, so i wasted a lot of time there; until i decided to try the credentials i have with ssh on the user 'mtz'.
+
+![db](../pictures/permx-walk/Screenshot-2024-10-05-193120.png)
+
+
+
+
+
+
+## Shell as root
+
+![sudo](../pictures/permx-walk/Screenshot-2024-10-05-193250.png)
+
+The first idea i got, was some kind of bash command injection, and i wasted some time and energy there. Then, i tried to change permissions for important files, so i chose `/etc/shadow`, by creating a link to it in `/home/mtz`.
+
+![sudo](../pictures/permx-walk/Screenshot-2024-10-06-023812.png)
+
+With this, i granted the user `mtz` read and write permissions on `/etc/shadow`. The idea is to chose a password that i know, then create its hash, and copy/paste this hash in `/etc/shadow` for the user `root` by replacing the original hash.
+
+![shadow](../pictures/permx-walk/Screenshot-2024-10-06-032807.png)
+
+And with this generated hash from the password `sekkio123`, i logged into `root`.
+
+![root](../pictures/permx-walk/Screenshot-2024-10-06-140309.png)
