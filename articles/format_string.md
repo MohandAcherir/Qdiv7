@@ -7,50 +7,53 @@ in order to clarify this for good.
 
 ### First things first
 
-Just like the for the formats ```%x```, ```%s```, ```%p```, ```%d``` ...etc which are used to print a variable. For example :
+Just like the for the formats `%x`, `%s`, `%p`, `%d` ...etc which are used to print a variable. For example :
 
-```printf("%x", some_variable);``` which prints the value of ```some_variable``` in\
-hexadecimal, if we do : ```printf("%n", &some_variable);``` - here's most important\
-thing to understand in this article - the value of ```some_variable``` will contain\
-the number of characters before ```%n``` in the first argument of ```printf```; \
+```
+   printf("%x", some_variable);
+```
+prints the value of ```some_variable``` in hexadecimal.
 
-in this case, there's 0 characters before ```%n```, so ```some_variable``` has the \
-value 0. To put it simply, the format ```%n``` is used to count the number of characters\
-printed prior to ```%n```.
+```
+   printf("%n", &some_variable);
+```
+Here's most important thing to understand in this article - the value of `some_variable` will contain the number of characters before `%n` in the first argument of `printf`.\
+So in this case, there's 0 characters before `%n`, hence `some_variable` has the value 0.
+
+To put it simply, the format `%n` is used to count the number of characters printed prior to `%n`, and with that in mind, exploiting it won't be a mystery.
 
 
 
 **Some other examples:**
 
 
-1. ```printf("Hello%nAA", &some_variable);```: in this case, the first argument\
-to ```printf``` is "Hello%nAA"; thus, ```some_variable``` has the value 4, because\
-"Hello" is before ```%n``` and has length 4. ("AA" is after ```%n``` in the string, so it does not count).
+``` 
+   printf("Hello%nAA", &some_variable);
+```
+in this case, the first argument to `printf` is the string "Hello%nAA"; thus, `some_variable` has the value 4, because "Hello" is before `%n` and has length 4 ("AA" is after `%n` in the string, so it does not count).
 
 
-3. ```printf("HelloAA%n", &some_variable);```. In this case, the first argument\
-to ```printf``` is "HelloAA%n", thus, ```some_variable``` has the value 6, because\
-"HelloAA" is before ```%n``` and has length 6.
+```
+   printf("HelloAA%n", &some_variable);
+```
+For this one, the first argument to `printf` is "HelloAA%n", thus, `some_variable` has the value 6, since "HelloAA" is before `%n` and has length 6.
 
 
 And here's a slightly different one:
 
 
-```printf("Hello%nAA%n", &some_variable1, &some_variable2);```.\
-Just by following the definition, the first argument to ```printf``` is "Hello%nAA%n";\
-thus, the first ```%n``` will read 4 (the length of "Hello"), and the second ```%n```\
-will read all which is before it, namely "HelloAA", thus 6. So ```some_variable1``` \
-has the value 4 and ```some_variable2``` has the value 6.
+```
+   printf("Hello%nAA%n", &some_variable1, &some_variable2);
+```
+Just by following the definition, the first argument to `printf` is "Hello%nAA%n", thus, the first `%n` will read 4 (the length of "Hello"), and the second `%n` will read all which is before it, namely "HelloAA", thus 6. So `some_variable1` has the value 4 and `some_variable2` has the value 6.
 
 
-With all this in mind, the rest of the exploitation is fairly simple.
+With all this in mind, the exploitation is fairly simple.
 
 
 ### Variants of `%n` in C
 
-In C, the format specifiers `%n` and its variants are used with the `printf` family of\
-functions to store the number of characters printed so far into the provided argument.\
-Below is a list of commonly used variants:
+In C, the format specifiers `%n` and its variants are used with the `printf` family of functions to store the number of characters printed so far into the provided argument. Below is a list of commonly used variants:
 
 1. **`%n`**:  
    Stores the number of characters printed so far as an `int` into the argument.
