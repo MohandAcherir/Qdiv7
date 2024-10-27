@@ -18,4 +18,6 @@
 
 **[Active Directory Pentesting Basics](https://mohandacherir.github.io/Qdiv7/articles/AD_basics.html)**
 
-**[ARM architecture basics](https://mohandacherir.github.io/Qdiv7/articles/ARM_basics.html)**
+**[ARM architecture basics and assembly](https://mohandacherir.github.io/Qdiv7/articles/ARM_basics.html)**
+
+**[MIPS architecture basics and assembly](./articles/MIPS_Architecture_and_Assembly.md)**
