@@ -9,8 +9,9 @@
 5. [Common MIPS Instructions](#common-mips-instructions)
 6. [Writing and Running MIPS Assembly Code](#writing-and-running-mips-assembly-code)
 7. [Example Programs](#example-programs)
-8. [Best Practices in MIPS Assembly](#best-practices-in-mips-assembly)
-9. [Additional Resources](#additional-resources)
+8. [Stack Frame and Return Address Management](#stack-frame-and-return-address-management)
+9. [Best Practices in MIPS Assembly](#best-practices-in-mips-assembly)
+10. [Additional Resources](#additional-resources)
 
 ---
 
@@ -159,7 +160,7 @@ exit:
 
 ---
 
-# MIPS Code Explanation: Stack Frame and Return Address Management
+## 8. Stack Frame and Return Address Management
 
 This document expands on the previous MIPS code explanation with a detailed breakdown of the stack frame setup, management, and restoration, as well as the handling of the return address.
 
@@ -249,7 +250,7 @@ hello_start_len = . - hello_start
 - **`hello_len` and `hello_start_len`**: Calculates the lengths of each string for reference in system calls.
 
 
-## 8. Best Practices in MIPS Assembly
+## 9. Best Practices in MIPS Assembly
 
 1. **Use comments generously**: Describe what each line or block of code does.
 2. **Minimize memory access**: Use registers as much as possible to avoid slow memory operations.
@@ -258,7 +259,7 @@ hello_start_len = . - hello_start
 
 ---
 
-## 9. Additional Resources
+## 10. Additional Resources
 
 - **SPIM and QtSPIM Documentation**: [SPIM](http://spimsimulator.sourceforge.net/)
 - **MIPS Green Sheet**: A quick reference for MIPS instructions.
