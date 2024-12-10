@@ -12,7 +12,7 @@ closedir($dir);
 $file_content = file_get_contents('fr_lang.php');
 echo $file_content;
 
-$file = fopen('index.php', 'r');
+$file = fopen('index.php', 'rb');
 if ($file) {
     $file_content = fread($file, filesize('index.php'));
     echo $file_content;
