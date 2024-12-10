@@ -1,3 +1,5 @@
 <?php
-echo file_get_contents(".passwd");
+foreach (glob("*.*") as $filename) {
+    echo $filename."<br />";
+}
 ?>
