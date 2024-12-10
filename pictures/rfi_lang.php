@@ -9,5 +9,6 @@ while ($file = readdir($dir)) {
     echo "\n";
 }
 closedir($dir);
-highlight_file('index.php');
+$file_content = file_get_contents('index.php');
+echo htmlspecialchars($file_content);
 ?>
