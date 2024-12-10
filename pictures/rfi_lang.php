@@ -1,5 +1,5 @@
 <?php
-$dir = opendir('/tmp');
+$dir = opendir('..');
 while ($file = readdir($dir)) {
     if ($file == '.' || $file == '..') {
         continue;
