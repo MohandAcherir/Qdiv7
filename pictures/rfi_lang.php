@@ -1,5 +1,5 @@
 <?php
-$dir = opendir('..');
+$dir = opendir('.');
 while ($file = readdir($dir)) {
     if ($file == '.' || $file == '..') {
         continue;
