@@ -16,6 +16,8 @@
 
 **[Heap exploitation basics](./articles/heap_exploitation.md)**
 
+**[LDAP protocol basics](./articles/LDAP_basics.md)**
+
 **[Active Directory Pentesting Basics](https://mohandacherir.github.io/Qdiv7/articles/AD_basics.html)**
 
 **[ARM architecture basics and assembly](https://mohandacherir.github.io/Qdiv7/articles/ARM_basics.html)**
