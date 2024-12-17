@@ -186,27 +186,27 @@ The http server redirects to <code>permx.htb/</code>, so i added <code>10.10.11.
 <p>The website &ldquo;permx.htb&rdquo; isn&rsquo;t interesting in itself, so i enumerated potential subdomains:</p>
 <p><img src="images/permx-walk/Screenshot-2024-10-04-231033.png" alt="subdom_enum"></p>
 <p>So, &ldquo;lms.permx.htb&rdquo; gives to a Chamilo login portal:</p>
-<p><img src="images/permx-walk/Screenshot-2024-10-04-231601.png" alt="login">
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-04-231601.png" alt="login">
 I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE in &lsquo;chamilo&rsquo;, and just like that, i found CVE-2023-4220 and <a href="https://github.com/Ziad-Sakr/Chamilo-CVE-2023-4220-Exploit">its exploit on github</a>, which allows us to upload a <code>.php</code> webshell.</p>
 <h2 id="exploitation">Exploitation</h2>
-<p><img src="/images/permx-walk/Screenshot-2024-10-04-235544.png" alt="webshell">
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-04-235544.png" alt="webshell">
 After uploading the webshell file, i&rsquo;ve setup a local simple webserver and queried it from the boxe&rsquo;s host using the webshell, for the sake of checking its usability.</p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-05-001412.png" alt="server"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-05-001412.png" alt="server"></p>
 <p>And just like that, i got a <code>www-data</code> shell with the command: <code>./CVE-2023-4220.sh -f webshell.php -h http://10.10.11.23 -p 5555</code></p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-05-021703.png" alt="shell"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-05-021703.png" alt="shell"></p>
 <p>From there, i found a username &lsquo;mtz&rsquo;,and i enumerated all the possible vectors to obtain a privilege escalation, but nothing interesting. But after some reseach on chamilo, i found that the configuration file in <code>app/config/configuration</code> may contain interesting information:</p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-05-142548.png" alt="db"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-05-142548.png" alt="db"></p>
 <h2 id="shell-as-mtz">Shell as mtz</h2>
 <p>At first, i went through, what might have been, a dead end, by trying to query the DB and gain admin credentials, so i wasted a lot of time there; until i decided to try the credentials i have with ssh on the user &lsquo;mtz&rsquo;.</p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-05-193120.png" alt="db"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-05-193120.png" alt="db"></p>
 <h2 id="shell-as-root">Shell as root</h2>
-<p><img src="/images/permx-walk/Screenshot-2024-10-05-193250.png" alt="sudo"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-05-193250.png" alt="sudo"></p>
 <p>The first idea i got, was some kind of bash command injection, and i wasted some time and energy there. Then, i tried to change permissions for important files, so i chose <code>/etc/shadow</code>, by creating a link to it in <code>/home/mtz</code>.</p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-06-023812.png" alt="sudo"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-06-023812.png" alt="sudo"></p>
 <p>With this, i granted the user <code>mtz</code> read and write permissions on <code>/etc/shadow</code>. The idea is to chose a password that i know, then create its hash, and copy/paste this hash in <code>/etc/shadow</code> for the user <code>root</code> by replacing the original hash.</p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-06-032807.png" alt="shadow"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-06-032807.png" alt="shadow"></p>
 <p>And with this generated hash from the password <code>sekkio123</code>, i logged into <code>root</code>.</p>
-<p><img src="/images/permx-walk/Screenshot-2024-10-06-140309.png" alt="root"></p>
+<p><img src="/Qdiv7/images/permx-walk/Screenshot-2024-10-06-140309.png" alt="root"></p>
 
         
     </div>
