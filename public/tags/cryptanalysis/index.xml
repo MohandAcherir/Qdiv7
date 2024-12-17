@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Cryptanalysis on Qdiv7</title>
+    <link>https://mohandacherir.github.io/Qdiv7/tags/cryptanalysis/</link>
+    <description>Recent content in Cryptanalysis on Qdiv7</description>
+    <generator>Hugo</generator>
+    <language>en</language>
+    <lastBuildDate>Sun, 15 Dec 2024 00:00:00 +0000</lastBuildDate>
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/cryptanalysis/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Faulted RSA Signature</title>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</link>
+      <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</guid>
+      <description>Faulted RSA signature attack Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture 32 bits&amp;rdquo;.&#xA;Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce service est susceptible à des erreurs dans le processus d’exponentiation.&#xA;Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&amp;rsquo;on ne connait pas.</description>
+    </item>
+  </channel>
+</rss>

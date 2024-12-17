@@ -4,7 +4,7 @@ date: 2024-12-15
 # image: ""
 lastmod: 2024-12-15
 showTableOfContents: false
-# tags: ["",]
+tags: ["HTB","easy"]
 title: "HTB Permx"
 type: "post"
 ---
