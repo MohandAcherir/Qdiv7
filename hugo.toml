@@ -45,6 +45,6 @@ title = "Qdiv7"
       {name = "linkedin", url = "https://www.linkedin.com/in/mohand-arezki-acherir-b42911264"},
       {name = "rootme", url = "https://root-me.org/Acherir7"},
     ]
-    avatarURL = "/static/images/0074.png"
+    avatarURL = "images/0074.png"
     #logo = "../images/0072.png"
 	
