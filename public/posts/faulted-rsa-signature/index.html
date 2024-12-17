@@ -214,7 +214,7 @@ l’expose à de sérieux risques. Dans ce cas, on a une signature faussée expl
 propriétés mathématiques du Théorème des Reste Chinois.</p>
 <p>On note <code>m</code> la représentation numérique du message &ldquo;Pic Sans Nom (3913 m)&rdquo; paddé (1FF&hellip;FF00&hellip;) avec le format PKCS#1<br>
 <code>s</code> la représentation numérique de la signature fausée et <code>(e:exposant, n:module)</code> la clé publique.</p>
-<p>Les mathématiques du TRC impliquent que pour $u = m – (s)^e mod(n)$, on a que $pgcd(u, n)$ (&gt;1) est un facteur de <code>n</code>.</p>
+<p>Les mathématiques du TRC impliquent que pour ( u = m - s^e \mod n ), on a que $pgcd(u, n)$ (&gt;1) est un facteur de <code>n</code>.</p>
 <p>La dernière étape pour trouver un facteur de <code>n</code> est de ‘guesser’ de nombre de <code>FF</code> dans le padding
 de <code>m</code>. Un test exhaustif de 0 à 600 est suffisant pour trouver la bonne représentation numérique de <code>m</code>.</p>
 <p>Une fois qu’on a le premier facteur de <code>n</code>, on divise <code>n</code> par ce facteur pour trouver le second facteur.

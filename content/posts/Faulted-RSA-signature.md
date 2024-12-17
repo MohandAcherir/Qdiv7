@@ -60,7 +60,7 @@ propriétés mathématiques du Théorème des Reste Chinois.
 On note `m` la représentation numérique du message "Pic Sans Nom (3913 m)" paddé (1FF...FF00...) avec le format PKCS#1\
 `s` la représentation numérique de la signature fausée et `(e:exposant, n:module)` la clé publique.
 
-Les mathématiques du TRC impliquent que pour $u = m – (s)^e mod(n)$, on a que $pgcd(u, n)$ (>1) est un facteur de `n`.
+Les mathématiques du TRC impliquent que pour \( u = m - s^e \mod n \), on a que $pgcd(u, n)$ (>1) est un facteur de `n`.
 
 La dernière étape pour trouver un facteur de `n` est de ‘guesser’ de nombre de `FF` dans le padding
 de `m`. Un test exhaustif de 0 à 600 est suffisant pour trouver la bonne représentation numérique de `m`.
