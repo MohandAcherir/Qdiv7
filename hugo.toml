@@ -46,5 +46,5 @@ title = "Qdiv7"
       {name = "rootme", url = "https://root-me.org/Acherir7"},
     ]
     avatarURL = "../images/0074.png"
-    logo = "../images/0072.png"
+    #logo = "../images/0072.png"
 	
