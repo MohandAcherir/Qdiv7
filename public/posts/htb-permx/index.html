@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en"><head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --accent-color: #FF4D4D;
+        }
+    </style>
+
+    
+    
+    
+    
+    
+    
+
+    
+    <title>HTB Permx</title>
+    <meta name="description" content="Permx walkthrough OS: Linux, Difficulty: Easy
+Enumeration Ports scan: nmap -p- -sCV 10.10.11.23
+PORT STATE SERVICE VERSION 22/tcp open ssh OpenSSH 8.9p1 Ubuntu …">
+    <meta name="keywords" content=''>
+
+    <meta property="og:url" content="http://localhost:1313/posts/htb-permx/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="HTB Permx">
+    <meta property="og:description" content="Permx walkthrough OS: Linux, Difficulty: Easy
+Enumeration Ports scan: nmap -p- -sCV 10.10.11.23
+PORT STATE SERVICE VERSION 22/tcp open ssh OpenSSH 8.9p1 Ubuntu …">
+    <meta property="og:image" content="http://localhost:1313/images/0074.png">
+    <meta property="og:image:secure_url" content="http://localhost:1313/images/0074.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="HTB Permx">
+    <meta name="twitter:description" content="Permx walkthrough OS: Linux, Difficulty: Easy
+Enumeration Ports scan: nmap -p- -sCV 10.10.11.23
+PORT STATE SERVICE VERSION 22/tcp open ssh OpenSSH 8.9p1 Ubuntu …">
+    <meta property="twitter:domain" content="http://localhost:1313/posts/htb-permx/">
+    <meta property="twitter:url" content="http://localhost:1313/posts/htb-permx/">
+    <meta name="twitter:image" content="http://localhost:1313/images/0074.png">
+
+    
+    <link rel="canonical" href="http://localhost:1313/posts/htb-permx/">
+
+    
+    <link rel="stylesheet" type="text/css" href="/css/normalize.min.css" media="print">
+
+    
+    <link rel="stylesheet" type="text/css" href="/css/main.min.css">
+
+    
+    <link id="dark-theme" rel="stylesheet" href="/css/dark.min.css">
+
+    
+    <script src="/js/bundle.min.3eb19cb61dde9e37b9522867f3e024aeb68e26ab8e03252e46e365abcb19acf7.js" integrity="sha256-PrGcth3enje5Uihn8&#43;AkrraOJquOAyUuRuNlq8sZrPc="></script>
+
+    
+    
+</head>
+<body>
+        <script>
+            
+            setThemeByUserPref();
+        </script><header class="header">
+    <nav class="header-nav">
+
+        
+        <div class="avatar">
+            <a href="http://localhost:1313/">
+                <img src='/images/0074.png' alt="avatar">
+            </a>
+        </div>
+        
+
+        <div class="nav-title">
+            <a class="nav-brand" href="http://localhost:1313/">Qdiv7</a>
+        </div>
+
+        <div class="nav-links">
+            
+            <div class="nav-link">
+                <a href="http://localhost:1313/posts/" aria-label="" > Posts </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="http://localhost:1313/tags/" aria-label="" > Tags </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
+            </div>
+            
+
+            <span class="nav-icons-divider"></span>
+            <div class="nav-link dark-theme-toggle">
+                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                <a aria-hidden="true" role="switch">
+                    <span class="theme-toggle-icon" data-feather="moon"></span>
+                </a>
+            </div>
+
+            <div class="nav-link" id="hamburger-menu-toggle">
+                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
+                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
+                    <span data-feather="menu"></span>
+                </a>
+            </div>
+
+            
+            <ul class="nav-hamburger-list visibility-hidden">
+                
+                <li class="nav-item">
+                    <a href="http://localhost:1313/posts/" > Posts </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="http://localhost:1313/tags/" > Tags </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
+                </li>
+                
+                <li class="nav-item dark-theme-toggle">
+                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                    <a role="switch">
+                        <span class="theme-toggle-icon" data-feather="moon"></span>
+                    </a>
+                </li>
+            </ul>
+
+        </div>
+    </nav>
+</header>
+<main id="content">
+    <div class="post container">
+    <div class="post-header-section">
+        <h1>HTB Permx</h1>
+
+        
+
+        
+	
+	
+	
+	
+        
+
+	
+
+	
+
+	
+          <small role="doc-subtitle"></small>
+	
+
+	
+          <p class="post-date">December 15, 2024
+           
+          </p>
+	
+
+        <ul class="post-tags">
+          
+        </ul>
+    </div>
+
+    <div class="post-content">
+        <h1 id="permx-walkthrough">Permx walkthrough</h1>
+<p><strong>OS</strong>: Linux, <strong>Difficulty</strong>: Easy</p>
+<h2 id="enumeration">Enumeration</h2>
+<p>Ports scan: <code>nmap -p- -sCV 10.10.11.23</code></p>
+<pre tabindex="0"><code>PORT   STATE SERVICE VERSION
+22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.10 (Ubuntu Linux; protocol 2.0)
+| ssh-hostkey: 
+|   256 e2:5c:5d:8c:47:3e:d8:72:f7:b4:80:03:49:86:6d:ef (ECDSA)
+|_  256 1f:41:02:8e:6b:17:18:9c:a0:ac:54:23:e9:71:30:17 (ED25519)
+80/tcp open  http    Apache httpd 2.4.52
+|_http-title: Did not follow redirect to fer
+|_http-server-header: Apache/2.4.52 (Ubuntu)
+Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel
+</code></pre><p>There&rsquo;s no available exploit for this version of Openssh, and passwordless connexions are not possible.<br>
+The http server redirects to <code>permx.htb/</code>, so i added <code>10.10.11.23 permx.htb</code> to <code>/etc/hosts</code>: <code> echo &quot;10.10.11.23 permx.htb&quot; | sudo tee -a /etc/hosts&quot;</code>.</p>
+<p>The website &ldquo;permx.htb&rdquo; isn&rsquo;t interesting in itself, so i enumerated potential subdomains:</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-04-231033.png" alt="subdom_enum"></p>
+<p>So, &ldquo;lms.permx.htb&rdquo; gives to a Chamilo login portal:</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-04-231601.png" alt="login">
+I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE in &lsquo;chamilo&rsquo;, and just like that, i found CVE-2023-4220 and <a href="https://github.com/Ziad-Sakr/Chamilo-CVE-2023-4220-Exploit">its exploit on github</a>, which allows us to upload a <code>.php</code> webshell.</p>
+<h2 id="exploitation">Exploitation</h2>
+<p><img src="/images/permx-walk/Screenshot-2024-10-04-235544.png" alt="webshell">
+After uploading the webshell file, i&rsquo;ve setup a local simple webserver and queried it from the boxe&rsquo;s host using the webshell, for the sake of checking its usability.</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-05-001412.png" alt="server"></p>
+<p>And just like that, i got a <code>www-data</code> shell with the command: <code>./CVE-2023-4220.sh -f webshell.php -h http://10.10.11.23 -p 5555</code></p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-05-021703.png" alt="shell"></p>
+<p>From there, i found a username &lsquo;mtz&rsquo;,and i enumerated all the possible vectors to obtain a privilege escalation, but nothing interesting. But after some reseach on chamilo, i found that the configuration file in <code>app/config/configuration</code> may contain interesting information:</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-05-142548.png" alt="db"></p>
+<h2 id="shell-as-mtz">Shell as mtz</h2>
+<p>At first, i went through, what might have been, a dead end, by trying to query the DB and gain admin credentials, so i wasted a lot of time there; until i decided to try the credentials i have with ssh on the user &lsquo;mtz&rsquo;.</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-05-193120.png" alt="db"></p>
+<h2 id="shell-as-root">Shell as root</h2>
+<p><img src="/images/permx-walk/Screenshot-2024-10-05-193250.png" alt="sudo"></p>
+<p>The first idea i got, was some kind of bash command injection, and i wasted some time and energy there. Then, i tried to change permissions for important files, so i chose <code>/etc/shadow</code>, by creating a link to it in <code>/home/mtz</code>.</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-06-023812.png" alt="sudo"></p>
+<p>With this, i granted the user <code>mtz</code> read and write permissions on <code>/etc/shadow</code>. The idea is to chose a password that i know, then create its hash, and copy/paste this hash in <code>/etc/shadow</code> for the user <code>root</code> by replacing the original hash.</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-06-032807.png" alt="shadow"></p>
+<p>And with this generated hash from the password <code>sekkio123</code>, i logged into <code>root</code>.</p>
+<p><img src="/images/permx-walk/Screenshot-2024-10-06-140309.png" alt="root"></p>
+
+        
+    </div>
+
+    <div class="prev-next">
+        
+    </div>
+
+    
+    
+    
+</div>
+
+
+
+    
+
+        </main><footer class="footer">
+    
+    
+
+    
+
+    
+
+    
+
+    <span>
+        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
+    </span>
+</footer>
+</body>
+</html>

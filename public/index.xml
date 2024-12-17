@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Qdiv7</title>
+    <link>http://localhost:1313/</link>
+    <description>Recent content on Qdiv7</description>
+    <generator>Hugo</generator>
+    <language>en</language>
+    <lastBuildDate>Sun, 15 Dec 2024 00:00:00 +0000</lastBuildDate>
+    <atom:link href="http://localhost:1313/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Faulted RSA Signature</title>
+      <link>http://localhost:1313/posts/faulted-rsa-signature/</link>
+      <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/posts/faulted-rsa-signature/</guid>
+      <description>Faulted RSA signature attack Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture 32 bits&amp;rdquo;.&#xA;Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce service est susceptible à des erreurs dans le processus d’exponentiation.&#xA;Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&amp;rsquo;on ne connait pas.</description>
+    </item>
+    <item>
+      <title>HTB Permx</title>
+      <link>http://localhost:1313/posts/htb-permx/</link>
+      <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
+      <guid>http://localhost:1313/posts/htb-permx/</guid>
+      <description>Permx walkthrough OS: Linux, Difficulty: Easy&#xA;Enumeration Ports scan: nmap -p- -sCV 10.10.11.23&#xA;PORT STATE SERVICE VERSION 22/tcp open ssh OpenSSH 8.9p1 Ubuntu 3ubuntu0.10 (Ubuntu Linux; protocol 2.0) | ssh-hostkey: | 256 e2:5c:5d:8c:47:3e:d8:72:f7:b4:80:03:49:86:6d:ef (ECDSA) |_ 256 1f:41:02:8e:6b:17:18:9c:a0:ac:54:23:e9:71:30:17 (ED25519) 80/tcp open http Apache httpd 2.4.52 |_http-title: Did not follow redirect to fer |_http-server-header: Apache/2.4.52 (Ubuntu) Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel There&amp;rsquo;s no available exploit for this version of Openssh, and passwordless connexions are not possible.</description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en"><head><script src="/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=livereload" data-no-instant defer></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --accent-color: #FF4D4D;
+        }
+    </style>
+
+    
+    
+    
+    
+    
+    
+
+    
+    <title>Faulted RSA Signature</title>
+    <meta name="description" content="Faulted RSA signature attack Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture 32 …">
+    <meta name="keywords" content=''>
+
+    <meta property="og:url" content="http://localhost:1313/posts/faulted-rsa-signature/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Faulted RSA Signature">
+    <meta property="og:description" content="Faulted RSA signature attack Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture 32 …">
+    <meta property="og:image" content="http://localhost:1313/images/0074.png">
+    <meta property="og:image:secure_url" content="http://localhost:1313/images/0074.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Faulted RSA Signature">
+    <meta name="twitter:description" content="Faulted RSA signature attack Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture 32 …">
+    <meta property="twitter:domain" content="http://localhost:1313/posts/faulted-rsa-signature/">
+    <meta property="twitter:url" content="http://localhost:1313/posts/faulted-rsa-signature/">
+    <meta name="twitter:image" content="http://localhost:1313/images/0074.png">
+
+    
+    <link rel="canonical" href="http://localhost:1313/posts/faulted-rsa-signature/">
+
+    
+    <link rel="stylesheet" type="text/css" href="/css/normalize.min.css" media="print">
+
+    
+    <link rel="stylesheet" type="text/css" href="/css/main.min.css">
+
+    
+    <link id="dark-theme" rel="stylesheet" href="/css/dark.min.css">
+
+    
+    <script src="/js/bundle.min.3eb19cb61dde9e37b9522867f3e024aeb68e26ab8e03252e46e365abcb19acf7.js" integrity="sha256-PrGcth3enje5Uihn8&#43;AkrraOJquOAyUuRuNlq8sZrPc="></script>
+
+    
+    
+</head>
+<body>
+        <script>
+            
+            setThemeByUserPref();
+        </script><header class="header">
+    <nav class="header-nav">
+
+        
+        <div class="avatar">
+            <a href="http://localhost:1313/">
+                <img src='/images/0074.png' alt="avatar">
+            </a>
+        </div>
+        
+
+        <div class="nav-title">
+            <a class="nav-brand" href="http://localhost:1313/">Qdiv7</a>
+        </div>
+
+        <div class="nav-links">
+            
+            <div class="nav-link">
+                <a href="http://localhost:1313/posts/" aria-label="" > Posts </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="http://localhost:1313/tags/" aria-label="" > Tags </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
+            </div>
+            
+
+            <span class="nav-icons-divider"></span>
+            <div class="nav-link dark-theme-toggle">
+                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                <a aria-hidden="true" role="switch">
+                    <span class="theme-toggle-icon" data-feather="moon"></span>
+                </a>
+            </div>
+
+            <div class="nav-link" id="hamburger-menu-toggle">
+                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
+                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
+                    <span data-feather="menu"></span>
+                </a>
+            </div>
+
+            
+            <ul class="nav-hamburger-list visibility-hidden">
+                
+                <li class="nav-item">
+                    <a href="http://localhost:1313/posts/" > Posts </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="http://localhost:1313/tags/" > Tags </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
+                </li>
+                
+                <li class="nav-item dark-theme-toggle">
+                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                    <a role="switch">
+                        <span class="theme-toggle-icon" data-feather="moon"></span>
+                    </a>
+                </li>
+            </ul>
+
+        </div>
+    </nav>
+</header>
+<main id="content">
+    <div class="post container">
+    <div class="post-header-section">
+        <h1>Faulted RSA Signature</h1>
+
+        
+
+        
+	
+	
+	
+	
+        
+
+	
+
+	
+
+	
+          <small role="doc-subtitle"></small>
+	
+
+	
+          <p class="post-date">December 15, 2024
+           
+          </p>
+	
+
+        <ul class="post-tags">
+          
+        </ul>
+    </div>
+
+    <div class="post-content">
+        <h1 id="faulted-rsa-signature-attack">Faulted RSA signature attack</h1>
+<p>Le challenge commence par &ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture
+32 bits&rdquo;.<br>
+Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce
+service est susceptible à des erreurs dans le processus d’exponentiation.<br>
+Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&rsquo;on ne
+connait pas.</p>
+<p>La clé publique:</p>
+<pre tabindex="0"><code>-----BEGIN RSA PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyyj+K5YrxLR0K1kurP0K
+GtOgXhnBKAkMJgiGu2OrbjRXHy0uATxajodcWbsKSjLuAgsDiO17ADYHBisIfiqo
+/eDcz7McDxtXX1qf0ToDjwxIvyPnhnPHLRG+kJqLy4FxX4f4gvJQV1hW3OwYgUa3
+ylAhPERMXfCReeQxpcwri8QFiW1vuxJIRnTpxIxeU1Ac5Ekce1YqUJHb07dKD6zt
+gVHUCsWJnPwcib+a8xjDuTfeMYzYx4FQWYEaYEAZ897ZO1iavnP1wE/dAh8WLDZF
+Sz5WqwViuF9O3jZG3Nl6CNZdhVGnkhxq8fgdbdo1cdxaffulxeiEm77lfs7Us166
+cZnVuxjPyIH12tpTAlG5ODFI49ru0tAKcihQgdaXggMr5SH00pN3QSVUumy7pLFw
+0mnqxO8vwXEwYe2zNMgEn+go0Wn9ksct2wEMIpbRLSHZcMZckX5iwnZuWvT+yY64
+KQEiHtTsE2o1Ih9GzpzOpHrkISOBZUtI+VaGAHiwYRKdgaAFTZ9Rk38Sgiv9dk9c
+HbggUzNtq7tpJw2rR9q5Kpl01QYpbddykuS1THstYGQNI6rvjx+WVW8ADR4hn/M7
+nsNxXAP1Zlj8fltX2csHpt3cF2Dq2rGILfvhyEFR3V2xZocUJFIoxh6IZHtbVPQI
+a48VlxsZD4bBTvr5d0eQfv0CAwEAAQ==
+-----END RSA PUBLIC KEY-----
+</code></pre><p>Le fait d&rsquo;avoir la clé publique nous permet de vérifier la validité de chaque signature; et comme ça, une signature non valide est trouvée
+et qui est supposée signer le message <code>Pic Sans Nom (3913 m)</code>. Et voici la signature(faussée) de ce dernier message:</p>
+<pre tabindex="0"><code>sTL3fvslMBMcSWCELORElJ3Z54cOdM9+PnHg52AdREr9ELNogojXgzVRzRo8kYeM
+o/g5GL/0pb3USfWpbbiGIr1aHpwngHGolJ/6rQbT9h2Mgwb2O4UqWET2/MTGK1LF
+SNa8X/NbVEiJDFaAhfhtRp0914Ngm76qczGlbQEKI2OhhUU0t4oN6psvIOnuzwzI
+Y2fxc/HePQKTsCeyTq6KNaxoIgGIYPkgNtIKWqZEi3Pf4R00IVYcw0H5ohhXQ3x7
+zXyla1AizVAGfzYpXcBNNAOrfoLEaSQ+fsxYiWsAwRShZDpctmtPyC+hld1WxZ5l
+xH5kk/EyZxMc+tjV6BVixBJmnBe9RDJwYWbAivdZ9r5eu6wQXPlNgj2/bFZkIV1G
+K2o5mqwY8her/SZ/Hruwg0pm93MccujCyceM37HbUVuNiDsfDq35A26w+V0h0tyy
+B/fdrLQ0/AOO6YEOkXIJ9TR8uTAng5b3b4eE8s2MSnccqRVC3bn+lZD+H5L3Rqpd
+559RFRLOOVbh/6SQ9PN4lyYwIu1bkAlq77psl8Ux4e1JpEWC/Gw5xBAuPUesZI8G
+Kozbts+Oe9p4ph7i8chytD4faH4rCDcKTaGhfhyOVcsy07KyoGvctrZR1832FLnf
+jA966Laow9dU83nzvbuu9B0zVMfavlc3M85oJW7bsKA=
+</code></pre><p>Le calcul du RSA utilise le théorème des restes chinois pour alléger le coût en temps, mais ceci
+l’expose à de sérieux risques. Dans ce cas, on a une signature faussée exploitable grâce aux
+propriétés mathématiques du Théorème des Reste Chinois.</p>
+<p>On note <code>m</code> la représentation numérique du message &ldquo;Pic Sans Nom (3913 m)&rdquo; paddé (1FF&hellip;FF00&hellip;) avec le format PKCS#1<br>
+<code>s</code> la représentation numérique de la signature fausée et <code>(e:exposant, n:module)</code> la clé publique.</p>
+<p>Les mathématiques du TRC impliquent que pour $u = m – (s)^e mod(n)$, on a que $pgcd(u, n)$ (&gt;1) est un facteur de <code>n</code>.</p>
+<p>La dernière étape pour trouver un facteur de <code>n</code> est de ‘guesser’ de nombre de <code>FF</code> dans le padding
+de <code>m</code>. Un test exhaustif de 0 à 600 est suffisant pour trouver la bonne représentation numérique de <code>m</code>.</p>
+<p>Une fois qu’on a le premier facteur de <code>n</code>, on divise <code>n</code> par ce facteur pour trouver le second facteur.
+Et puis, on calcule <code>Phi(n)</code> (Indicatrice d’Euler), et ensuite on peut retrouver la valeur de la clé
+privée qu&rsquo;on note <code>d</code>, en calculant l’inverse multiplicatif de <code>e modulo Phi(n)</code>.</p>
+<p>Et enfin, l&rsquo;exploit:</p>
+<pre tabindex="0"><code>from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from base64 import b64decode
+from base64 import b64encode
+from Crypto.Util.number import bytes_to_long
+import math
+
+def modInv(a,p):          # Finds the inverse of a mod p, if it exists
+  for i in range(1,p):
+    if (i*a)%p==1:
+      return i
+  return 0
+
+
+
+new_pub = &#39;&#39;&#39;-----BEGIN RSA PUBLIC KEY-----
+MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAyyj+K5YrxLR0K1kurP0K
+GtOgXhnBKAkMJgiGu2OrbjRXHy0uATxajodcWbsKSjLuAgsDiO17ADYHBisIfiqo
+/eDcz7McDxtXX1qf0ToDjwxIvyPnhnPHLRG+kJqLy4FxX4f4gvJQV1hW3OwYgUa3
+ylAhPERMXfCReeQxpcwri8QFiW1vuxJIRnTpxIxeU1Ac5Ekce1YqUJHb07dKD6zt
+gVHUCsWJnPwcib+a8xjDuTfeMYzYx4FQWYEaYEAZ897ZO1iavnP1wE/dAh8WLDZF
+Sz5WqwViuF9O3jZG3Nl6CNZdhVGnkhxq8fgdbdo1cdxaffulxeiEm77lfs7Us166
+cZnVuxjPyIH12tpTAlG5ODFI49ru0tAKcihQgdaXggMr5SH00pN3QSVUumy7pLFw
+0mnqxO8vwXEwYe2zNMgEn+go0Wn9ksct2wEMIpbRLSHZcMZckX5iwnZuWvT+yY64
+KQEiHtTsE2o1Ih9GzpzOpHrkISOBZUtI+VaGAHiwYRKdgaAFTZ9Rk38Sgiv9dk9c
+HbggUzNtq7tpJw2rR9q5Kpl01QYpbddykuS1THstYGQNI6rvjx+WVW8ADR4hn/M7
+nsNxXAP1Zlj8fltX2csHpt3cF2Dq2rGILfvhyEFR3V2xZocUJFIoxh6IZHtbVPQI
+a48VlxsZD4bBTvr5d0eQfv0CAwEAAQ==
+-----END RSA PUBLIC KEY-----&#39;&#39;&#39;
+
+
+
+k = RSA.importKey(new_pub)
+
+# The ecrypted message
+c = &#34;RiK+IgIqPxRSkllkVR2PSJKpEUg95QvaukDIsa64a9Uzyaxw+d2arOIJNLOuZUPSJG3JFJVYjBwR&#34;
+c+= &#34;NoISFY+vFfhMt/iMaCVrKewu5G4oco18c5OQDSzsDFkK1376/W8Di0PdmJbaita/mjaMIfEF1iUC&#34;
+c+= &#34;+r3n8tBJH2Fz1xAkRTZqZpRh3ImvvOresidMICmVpNc1eQttY956csxMWKWh3UWvP7Czss0f78VL&#34;
+c+= &#34;BPZBCA3Vu75KCq8t2H1s1WIa6jqDjI9dX4Pv+K3EqrFexGNHUAvGdrR8f1p2igc5/aatEA3UKYTG&#34;
+c+= &#34;jpHnRhF42bHoztMrr3/As7poHVf15wcbirki6YGHxorwreGpy7YvCGLcQS9fGcFlQr6kfFbtPRcH&#34;
+c+= &#34;Ci+HcMJV1ZzRSt7onW/yBFnG0uEhAQNhotYYxIT3l7nEZ/jTakS+57dtfPrhZOJSTwh5A8AY5R3X&#34;
+c+= &#34;2nN0qUudgf2iFtVznNh0Put8mrn+aFaH3+Egvt/3T2El+sDlfvZdS95zU8sE3cvT2ip0AjoC5kTQ&#34;
+c+= &#34;kzXq+ahSKpASuS411OhniNf8hGg5WbSOOg18BrftSBu/uRsoXLPMRATzI6PGwtnQfmE09fE4d1CB&#34;
+c+= &#34;ChCbTy4etnVZRuS5HB7qvBKXUTdSZ4FBJxRg3sTQhiuqeV4Bhe5wFYszic/k+QfnMaXcQrPegUk=&#34; 
+
+
+sig = &#34;sTL3fvslMBMcSWCELORElJ3Z54cOdM9+PnHg52AdREr9ELNogojXgzVRzRo8kYeMo/g5GL/0pb3USfWpbbiGIr1aHpwngHGolJ/6rQbT9h2Mgwb2O4UqWET2/MTGK1LFSNa8X/NbVEiJDFaAhfhtRp0914Ngm76qczGlbQEKI2OhhUU0t4oN6psvIOnuzwzIY2fxc/HePQKTsCeyTq6KNaxoIgGIYPkgNtIKWqZEi3Pf4R00IVYcw0H5ohhXQ3x7zXyla1AizVAGfzYpXcBNNAOrfoLEaSQ+fsxYiWsAwRShZDpctmtPyC+hld1WxZ5lxH5kk/EyZxMc+tjV6BVixBJmnBe9RDJwYWbAivdZ9r5eu6wQXPlNgj2/bFZkIV1GK2o5mqwY8her/SZ/Hruwg0pm93MccujCyceM37HbUVuNiDsfDq35A26w+V0h0tyyB/fdrLQ0/AOO6YEOkXIJ9TR8uTAng5b3b4eE8s2MSnccqRVC3bn+lZD+H5L3Rqpd559RFRLOOVbh/6SQ9PN4lyYwIu1bkAlq77psl8Ux4e1JpEWC/Gw5xBAuPUesZI8GKozbts+Oe9p4ph7i8chytD4faH4rCDcKTaGhfhyOVcsy07KyoGvctrZR1832FLnfjA966Laow9dU83nzvbuu9B0zVMfavlc3M85oJW7bsKA=&#34;
+
+m = b&#39;Pic Sans Nom (3913 m)&#39;
+m = bytes.hex(m)
+
+pkcsm = &#34;&#34;
+
+P = 0
+Q = 0
+for i in range(0, 600):
+	sig1 = sig
+	pkcsm = &#34;1&#34;
+	pkcsm += &#34;ff&#34;*i
+	pkcsm += &#34;00&#34;
+	pkcsm += m
+	pkcsm = int(pkcsm, 16)
+	sig1 = b64decode(sig1)
+	sig1 = bytes_to_long(sig1)
+	# ==&gt; gcd((m-(s)^e) mod N, N) = q
+	u = k.n
+	v = (pkcsm-pow(sig1, k.e, k.n))%u
+	q = math.gcd(u, v)
+	if (k.n%q == 0) and (q != 1):
+		print(&#34;OK, q=&#34;+str(q)+&#34;\n&#34;)
+		Q = q
+		P = k.n // q
+
+phi = (P-1)*(Q-1)
+d = pow(k.e, -1, phi) % phi
+
+c = b64decode(c)
+c = bytes_to_long(c)
+flag = pow(c, d, k.n)
+flag = &#34;1&#34;+hex(flag)[2:]
+print(bytes.fromhex(flag).decode(&#34;utf-8&#34;, &#39;ignore&#39;))
+</code></pre><p>Après l&rsquo;exécution du script, on obtient:</p>
+<p><img src="/images/Faulted-RSA/Screenshot-2024-10-01-223750.png" alt="screen_flag"></p>
+
+        
+    </div>
+
+    <div class="prev-next">
+        
+    </div>
+
+    
+    
+    
+</div>
+
+
+
+    
+
+        </main><footer class="footer">
+    
+    
+
+    
+
+    
+
+    
+
+    <span>
+        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
+    </span>
+</footer>
+</body>
+</html>
