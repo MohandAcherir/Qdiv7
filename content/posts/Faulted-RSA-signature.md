@@ -158,4 +158,4 @@ print(bytes.fromhex(flag).decode("utf-8", 'ignore'))
 
 Après l'exécution du script, on obtient:
 
-![screen_flag](/images/Faulted-RSA/Screenshot-2024-10-01-223750.png)
+![screen_flag](/Qdiv7/images/Faulted-RSA/Screenshot-2024-10-01-223750.png)
