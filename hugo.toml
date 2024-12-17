@@ -5,6 +5,7 @@ enableRobotsTXT = true
 languageCode = "en"
 theme = "gokarna"
 title = "Qdiv7"
+avatarURL = "images/0074.png"
 
 [menu]
   [[menu.main]]
