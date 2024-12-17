@@ -36,13 +36,13 @@ The http server redirects to `permx.htb/`, so i added `10.10.11.23 permx.htb` to
 
 The website "permx.htb" isn't interesting in itself, so i enumerated potential subdomains:
 
-![subdom_enum](images/permx-walk/Screenshot-2024-10-04-231033.png)
+![subdom_enum](../../static/images/permx-walk/Screenshot-2024-10-04-231033.png)
 
 
 
 So, "lms.permx.htb" gives to a Chamilo login portal:
 
-![login](images/permx-walk/Screenshot-2024-10-04-231601.png)
+![login](	images/permx-walk/Screenshot-2024-10-04-231601.png)
 I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE in 'chamilo', and just like that, i found CVE-2023-4220 and [its exploit on github](https://github.com/Ziad-Sakr/Chamilo-CVE-2023-4220-Exploit), which allows us to upload a `.php` webshell.
 
 

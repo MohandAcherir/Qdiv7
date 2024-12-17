@@ -184,7 +184,7 @@ Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel
 </code></pre><p>There&rsquo;s no available exploit for this version of Openssh, and passwordless connexions are not possible.<br>
 The http server redirects to <code>permx.htb/</code>, so i added <code>10.10.11.23 permx.htb</code> to <code>/etc/hosts</code>: <code> echo &quot;10.10.11.23 permx.htb&quot; | sudo tee -a /etc/hosts&quot;</code>.</p>
 <p>The website &ldquo;permx.htb&rdquo; isn&rsquo;t interesting in itself, so i enumerated potential subdomains:</p>
-<p><img src="images/permx-walk/Screenshot-2024-10-04-231033.png" alt="subdom_enum"></p>
+<p><img src="../../static/images/permx-walk/Screenshot-2024-10-04-231033.png" alt="subdom_enum"></p>
 <p>So, &ldquo;lms.permx.htb&rdquo; gives to a Chamilo login portal:</p>
 <p><img src="images/permx-walk/Screenshot-2024-10-04-231601.png" alt="login">
 I tried injecting some characters to get a SQL injection, but no result found. And then, i searched for a potential CVE in &lsquo;chamilo&rsquo;, and just like that, i found CVE-2023-4220 and <a href="https://github.com/Ziad-Sakr/Chamilo-CVE-2023-4220-Exploit">its exploit on github</a>, which allows us to upload a <code>.php</code> webshell.</p>
