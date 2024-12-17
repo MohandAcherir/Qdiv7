@@ -43,7 +43,7 @@ avatarURL = "images/0074.png"
     description = "My InfoSec blog"
     socialIcons = [
       {name = "twitter", url = "https://x.com/AcherirMoe/"},
-      {name = "linkedin", url = "https://www.linkedin.com/in/mohand-arezki-acherir-b42911264"},
+      {name = "linkedin", url = "https://linkedin.com/in/mohand-a-acherir-b42911264/"},
       {name = "rootme", url = "https://root-me.org/Acherir7"},
     ]
     avatarURL = "images/0074.png"
