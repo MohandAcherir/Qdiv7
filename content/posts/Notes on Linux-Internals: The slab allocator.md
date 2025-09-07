@@ -1,6 +1,6 @@
 +++
 title = 'Notes on Linux Internals: The Slab Allocator'
-date = 2025-09-06T07:07:07+01:00
+date = 2025-09-06
 tags = ['Linux','Memory','Kernel']
 type = 'post'
 +++
