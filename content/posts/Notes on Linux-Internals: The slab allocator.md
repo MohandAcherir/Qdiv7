@@ -252,8 +252,8 @@ TO BE CONTINUED
 
 ## References
 
-[https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1](https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1)
-[https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)
-[https://sam4k.com/linternals-memory-allocators-0x02/](https://sam4k.com/linternals-memory-allocators-0x02/)
+[https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1](https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1)\
+[https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)\
+[https://sam4k.com/linternals-memory-allocators-0x02/](https://sam4k.com/linternals-memory-allocators-0x02/)\
 [https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf](https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf)
 
