@@ -13,7 +13,7 @@
       <link>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
       <guid>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</guid>
-      <description>Faulted RSA signature attack Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture 32 bits&amp;rdquo;.&#xA;Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce service est susceptible à des erreurs dans le processus d’exponentiation.&#xA;Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&amp;rsquo;on ne connait pas.</description>
+      <description>&lt;h1 id=&#34;faulted-rsa-signature-attack&#34;&gt;Faulted RSA signature attack&lt;/h1&gt;&#xA;&lt;p&gt;Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture&#xA;32 bits&amp;rdquo;.&lt;br&gt;&#xA;Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce&#xA;service est susceptible à des erreurs dans le processus d’exponentiation.&lt;br&gt;&#xA;Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&amp;rsquo;on ne&#xA;connait pas.&lt;/p&gt;</description>
     </item>
   </channel>
 </rss>

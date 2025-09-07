@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Memory on Qdiv7</title>
+    <link>https://mohandacherir.github.io/Qdiv7/tags/memory/</link>
+    <description>Recent content in Memory on Qdiv7</description>
+    <generator>Hugo</generator>
+    <language>en</language>
+    <lastBuildDate>Fri, 06 Jun 2025 07:07:07 +0100</lastBuildDate>
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/memory/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Notes on Linux Internals: The Slab Allocator</title>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</link>
+      <pubDate>Fri, 06 Jun 2025 07:07:07 +0100</pubDate>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</guid>
+      <description>&lt;h1 id=&#34;linux-slub-allocator&#34;&gt;Linux SLUB allocator&lt;/h1&gt;&#xA;&lt;p&gt;The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems etc. It needs to ensure that it efficiently serves these requests under the specified constraints (if any) and to do so it relies on different types of memory allocators. Each allocator has its own interface and underlying implementation. The three main memory allocators used by the kernel are:&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

@@ -1,3 +1,10 @@
++++
+title = 'Notes on Linux Internals: The Slab Allocator'
+date = 2025-06-06T07:07:07+01:00
+tags = ['Linux','Memory','Kernel']
++++
+
+
 # Linux SLUB allocator
 
 The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems etc. It needs to ensure that it efficiently serves these requests under the specified constraints (if any) and to do so it relies on different types of memory allocators. Each allocator has its own interface and underlying implementation. The three main memory allocators used by the kernel are:
@@ -11,13 +18,13 @@ The Linux kernel groups available physical memory into pages (usually of size 4K
 More commonly the allocation requests initiated by the kernel for its internal use are for smaller blocks (usually less than page size) and using the page allocator for such cases results in wastage and internal fragmentation of memory. In order to avoid these issues the slab allocator is used. 
 
 The Linux kernel has 3 flavors of slab allocators namely, SLAB, SLUB and SLOB allocators. The SLUB allocator is the default and most widely used slab allocator and this article will only cover the SLUB allocator.
-SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability..
+SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability.
 
 ## Basic Concepts
 
 
 The idea of the slab allocator is based on the idea of object cache. The slab allocator uses a pre-allocated cache of objects. This cache of objects is created by:
-- reserving some page frames (allocated via the page allocator)
+- reserving some page frames (allocated via the page allocator).
 - dividing these page frames into objects and maintaining some metadata about the objects.
 
 So, A cache is a collection of slabs and A slab is a collection of objects.
@@ -27,8 +34,7 @@ So when the kernel wants to make an allocation via the SLUB allocator, it will f
 If there are no partial or free slabs, the SLUB allocator will allocate some new slabs via the buddy allocator. Yep, there it is, we're full circle now. The slabs themselves are allocated and freed using the buddy allocator we touched on last time.
 
 Note: “the SLAB allocator” vs “the slab”
-`The SLAB allocator` is a design/paradigm of memory allocation, whereas `the slab` is data struscture.
-
+`The SLAB allocator` is a design/paradigm of memory allocation, whereas `the slab` is data structure.
 
 
 ## Data Structures
@@ -224,7 +230,7 @@ If per-cpu slabs (active and partial) do not have free objects, then allocation 
 ### SLOWPATH 3:
 Now when neither of the per CPU active or partial slabs have free objects, slub allocator tries to get slabs from the partial slab list of local node but if it can’t find slabs in that node’s partial slab list, then it tries to get partial slabs from the per-node partial slab list corresponding to other nodes. The nodes nearer to CPU are tried first. The traversal of a node’s partial slab list involves acquiring kmem_cache_node.list_lock and since this is a central lock, the involved overhead is much more than acquiring kmem_cache_cpu.lock needed in previously described cases. While looking for a slab, slub allocator iterates through the per-node partial slab list and for the first found slab, it notes the first free object and this object will be returned as an allocated object and the rest of this slab becomes the per-cpu active slab.
 
-### SLOWPATH 4:
+
 If the per-cpu partial slab list is supported then slub allocator continues even after getting a usable slab and making it the active slab. It moves slabs from the per-node partial slab list to the per-cpu partial slab list and continues doing so until all slabs in the per-node partial slab list have been moved or the limit of maximum number of slabs that can be kept in a per-cpu partial slab list has been reached. The maximum number of slabs that can exist in the per-cpu partial slab list depends on object size. slub allocator tries to keep a certain number of objects available in the per-cpu partial slab list. Based on this number of objects and assuming that each slab will be half full, slub allocator decides how many slabs can reside in the per-cpu partial slab list. The number of objects in the per-cpu partial slab list, depends on the object size and can be 6, 24, 52 or 120. For larger objects, the number of objects that the slub allocator tries to maintain in the per-cpu partial slab list is smaller. For example for objects of size >= PAGE_SIZE this number is 6 and for objects of size < 256 this number is 120.
 
 ### Very SLOWPATH:
@@ -238,7 +244,8 @@ TO BE CONTINUED
 
 # REFERENCES
 
-![](https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1)
-![](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)
-![](https://sam4k.com/linternals-memory-allocators-0x02/)
-![](https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf)
+[ref1](https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1)
+[ref2](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)
+[ref3](https://sam4k.com/linternals-memory-allocators-0x02/)
+[ref4](https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf)
+
