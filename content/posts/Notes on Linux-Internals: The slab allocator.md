@@ -1,7 +1,8 @@
 +++
 title = 'Notes on Linux Internals: The Slab Allocator'
-date = 2025-06-06T07:07:07+01:00
+date = 2025-09-06T07:07:07+01:00
 tags = ['Linux','Memory','Kernel']
+type = 'post'
 +++
 
 
@@ -20,6 +21,8 @@ More commonly the allocation requests initiated by the kernel for its internal u
 The Linux kernel has 3 flavors of slab allocators namely, SLAB, SLUB and SLOB allocators. The SLUB allocator is the default and most widely used slab allocator and this article will only cover the SLUB allocator.
 SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability.
 
+![timeline](/Qdiv7/images/Linux-Internals-1/Screenshot-1.png)
+
 ## Basic Concepts
 
 
@@ -34,14 +37,16 @@ So when the kernel wants to make an allocation via the SLUB allocator, it will f
 If there are no partial or free slabs, the SLUB allocator will allocate some new slabs via the buddy allocator. Yep, there it is, we're full circle now. The slabs themselves are allocated and freed using the buddy allocator we touched on last time.
 
 Note: “the SLAB allocator” vs “the slab”
-`The SLAB allocator` is a design/paradigm of memory allocation, whereas `the slab` is data structure.
+`The SLAB allocator` is a design/paradigm of memory allocation, whereas the **`slab`** is data structure.
 
 
 ## Data Structures
 
+![object](/Qdiv7/images/Linux-Internals-1/Screenshot-3.png)
+
 ### Slab cache: struct kmem_cache
 
-Here's the complete `kmem_cache` as written in `https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h` :
+Here's the complete `kmem_cache` as written in [https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h](https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h) :
 
 ```c
 /*
@@ -103,19 +108,16 @@ struct kmem_cache {
 };
 ```
 
-// TO BE REMOVED
-A **slab cache** is represented by a `kmem_cache` object which has a per-CPU pointer **cpu_slab** to a `kmem_cache_cpu` object. \
-A `kmem_cache_cpu` object holds per-CPU information for a slab cache. Each slab is represented by a slab object. \
-`kmem_cache_node` represents a memory node used by the slab allocator.
 
 
 ### Analysis:
 
 - `name`: is name for the cache.
 - `size`, `object_size` and `offset` are illustrated with this image:
-// IMAGE HERE
+
+![object](/Qdiv7/images/Linux-Internals-1/Screenshot-2.png)
 - `oo` : number of objects per slab 
-- `flags` holds the flags that can be set when creating a kmem_cache object: TO COMPLETE.
+- `flags` holds the flags that can be set when creating a kmem_cache object.
 - `list` is a linked list of all the slab caches.
 - `cpu_slab` is a per-CPU pointer to a `kmem_cache_cpu` structure that enables lockless, fast-path allocation for each CPU core:
         - Each CPU core gets its own copy of the `kmem_cache_cpu` structure.
@@ -137,7 +139,7 @@ struct kmem_cache_cpu {
 };
 ```
 
-Note : We should note that both `kmem_cache_cpu.freelist` and `kmem_cache_cpu.slab.freelist` are pointing to objects on the active slab and these are two different lists albeit consisting of objects from the same slab.
+**Note** : We should note that both `kmem_cache_cpu.freelist` and `kmem_cache_cpu.slab.freelist` are pointing to objects on the active slab and these are two different lists albeit consisting of objects from the same slab.
 
 Here's the structure of the slab:
 ```c
@@ -174,14 +176,18 @@ struct slab {
 };
 ```
 
-Note: Before the 5.17 Kernel, a slab's metadata was accessed directly via a union in the `struct page`.
+**Note**: Before the 5.17 Kernel, a slab's metadata was accessed directly via a union in the `struct page`.
 
 - `slab_cache` is a pointer to the `kmem_cache` struct the slab belongs to.
 - `freelist` is a pointer to the first free object in this slab as we saw earlier.
 - `inuse:16` is the number of objects currently allocated.
 - `frozen`: mean that the slab is being actively modified by one CPU and should not be accessed by other CPUs
 
-A slab can consist of one or more pages and this does not depend on the object size i.e.  a slab can consist of multiple pages even if its objects are smaller than a page. The number of pages in a slab depends on `kmem_cache.oo` .
+A slab can consist of one or more pages and this does not depend on the object size i.e.  a slab can consist of multiple pages even if its objects are smaller than a page. The number of pages in a slab depends on `kmem_cache.oo`.
+
+
+![object](/Qdiv7/images/Linux-Internals-1/Screenshot-4.png)
+
 
 Last by not least, we have the `kmem_cache_node` structure:
 
@@ -236,16 +242,18 @@ If the per-cpu partial slab list is supported then slub allocator continues even
 ### Very SLOWPATH:
 Lastly if all of the slabs of a slab cache are full, a new slab gets allocated using page allocator and this newly allocated slab becomes the CPU’s current active slab. Amongst all the slow allocation paths this is the slowest one because it involves getting new pages from the **buddy allocator**.
 
+![object](/Qdiv7/images/Linux-Internals-1/Screenshot-5.png)
+
 
 ## Freeing a slub object
 TO BE CONTINUED
 
 
 
-# REFERENCES
+## References
 
-[ref1](https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1)
-[ref2](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)
-[ref3](https://sam4k.com/linternals-memory-allocators-0x02/)
-[ref4](https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf)
+[https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1](https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1)
+[https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)
+[https://sam4k.com/linternals-memory-allocators-0x02/](https://sam4k.com/linternals-memory-allocators-0x02/)
+[https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf](https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf)
 
