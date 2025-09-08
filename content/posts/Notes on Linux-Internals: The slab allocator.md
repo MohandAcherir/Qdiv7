@@ -12,11 +12,9 @@ The Linux kernel is responsible for managing the available physical memory that 
 - Page allocator
 - Slab allocator
 - Vmalloc allocator
-And There are other allocators as well such as contiguous memory allocator (CMA) etc.
 
-The Linux kernel groups available physical memory into pages (usually of size 4K) and these pages are allocated by the page allocator which serves as an interface for allocating physically contiguous memory in multiples of page size. For allocating large virtually contiguous blocks (that can be physically discontiguous) the vmalloc interface is used.
-
-More commonly the allocation requests initiated by the kernel for its internal use are for smaller blocks (usually less than page size) and using the page allocator for such cases results in wastage and internal fragmentation of memory. In order to avoid these issues the slab allocator is used. 
+The Linux kernel organizes available physical memory into fixed-size pages (typically 4KB each), which are managed by the page allocator—the fundamental interface for obtaining physically contiguous memory in page-size multiples. When the kernel requires large blocks of virtually contiguous memory that can span non-adjacent physical pages, it utilizes the vmalloc interface instead.
+However, most kernel memory allocation requests are for objects (using `kmalloc`, `kmem_cache_alloc` ..etc) significantly smaller than a full page, such as process descriptors, file structures, or network buffers. Directly using the page allocator for these sub-page allocations would result in substantial memory waste and severe internal fragmentation, as each small object would consume an entire 4KB page. To address this inefficiency, the kernel employs slab allocators, which subdivide pages into appropriately-sized object slots, enabling efficient allocation of small, frequently-used kernel data structures while minimizing fragmentation and maximizing memory utilization.
 
 The Linux kernel has 3 flavors of slab allocators namely, SLAB, SLUB and SLOB allocators. The SLUB allocator is the default and most widely used slab allocator and this article will only cover the SLUB allocator.
 SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability.
@@ -33,11 +31,8 @@ The idea of the slab allocator is based on the idea of object cache. The slab al
 So, A cache is a collection of slabs and A slab is a collection of objects.
 Objects belonging to a cache are further grouped into slabs, which will be of a fixed size and contain a fixed number of objects. 
 
-So when the kernel wants to make an allocation via the SLUB allocator, it will find the right cache (depending on type/size) and then find a partial slab to allocate that object.
-If there are no partial or free slabs, the SLUB allocator will allocate some new slabs via the buddy allocator. Yep, there it is, we're full circle now. The slabs themselves are allocated and freed using the buddy allocator we touched on last time.
-
-Note: “the SLAB allocator” vs “the slab”
-`The SLAB allocator` is a design/paradigm of memory allocation, whereas the **`slab`** is data structure.
+**Note**: “the SLAB allocator” vs “the slab” \
+**`The SLAB allocator`** is a design/paradigm of memory allocation, whereas the **`slab`** is a data structure.
 
 
 ## Data Structures

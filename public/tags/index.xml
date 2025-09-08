@@ -2,66 +2,66 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Tags on Qdiv7</title>
-    <link>http://localhost:1313/Qdiv7/tags/</link>
+    <link>https://mohandacherir.github.io/Qdiv7/tags/</link>
     <description>Recent content in Tags on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Sat, 06 Sep 2025 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/Qdiv7/tags/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Kernel</title>
-      <link>http://localhost:1313/Qdiv7/tags/kernel/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/kernel/</link>
       <pubDate>Sat, 06 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/kernel/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/kernel/</guid>
       <description></description>
     </item>
     <item>
       <title>Linux</title>
-      <link>http://localhost:1313/Qdiv7/tags/linux/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/linux/</link>
       <pubDate>Sat, 06 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/linux/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/linux/</guid>
       <description></description>
     </item>
     <item>
       <title>Memory</title>
-      <link>http://localhost:1313/Qdiv7/tags/memory/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/memory/</link>
       <pubDate>Sat, 06 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/memory/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/memory/</guid>
       <description></description>
     </item>
     <item>
       <title>Cryptanalysis</title>
-      <link>http://localhost:1313/Qdiv7/tags/cryptanalysis/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/cryptanalysis/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/cryptanalysis/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/cryptanalysis/</guid>
       <description></description>
     </item>
     <item>
       <title>Crypto</title>
-      <link>http://localhost:1313/Qdiv7/tags/crypto/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/crypto/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/crypto/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/crypto/</guid>
       <description></description>
     </item>
     <item>
       <title>Easy</title>
-      <link>http://localhost:1313/Qdiv7/tags/easy/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/easy/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/easy/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/easy/</guid>
       <description></description>
     </item>
     <item>
       <title>HTB</title>
-      <link>http://localhost:1313/Qdiv7/tags/htb/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/htb/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/htb/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/htb/</guid>
       <description></description>
     </item>
     <item>
       <title>RSA</title>
-      <link>http://localhost:1313/Qdiv7/tags/rsa/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/tags/rsa/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/tags/rsa/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/tags/rsa/</guid>
       <description></description>
     </item>
   </channel>
