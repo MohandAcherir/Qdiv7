@@ -796,6 +796,168 @@ __cold void io_uring_queue_exit(struct io_uring *ring)
 Then by triggering the garbage collector, the ring's `fd` with `inflight == refcount`, will be included in the `hitlist` which will free its queued files in `sbk` queue, thus, feering the registered file still in use -> **UAF**.
 
 
+### Diving into the actual GC handling
+
+**Stage 1**:
+
+The GC function grabs sockets from `gc_inflight_list` (As its name indicates, it contains sockets whose inflight > 0) and fills the `gc_candidates` list with sockets that have refcount == inflight:
+```c
+	list_for_each_entry_safe(u, next, &gc_inflight_list, link) {
+		struct sock *sk = &u->sk;
+		long total_refs;
+
+		total_refs = file_count(sk->sk_socket->file);
+
+		BUG_ON(!u->inflight);
+		BUG_ON(total_refs < u->inflight);
+		if (total_refs == u->inflight) { // <------------ Checking refcount == inflight
+			list_move_tail(&u->link, &gc_candidates); // <------------ Adding to the candidates list
+			__set_bit(UNIX_GC_CANDIDATE, &u->gc_flags); // <----------- flagging the socket as a candidate to GC
+			__set_bit(UNIX_GC_MAYBE_CYCLE, &u->gc_flags);
+
+			if (sk->sk_state == TCP_LISTEN) {
+				unix_state_lock_nested(sk, U_LOCK_GC_LISTENER);
+				unix_state_unlock(sk);
+			}
+		}
+	}
+```
+
+**Stage 2**:
+
+For each socket in the candidates list, it calls `scan_children`:
+```c
+	/* Now remove all internal in-flight reference to children of
+	 * the candidates.
+	 */
+	list_for_each_entry(u, &gc_candidates, link)
+		scan_children(&u->sk, dec_inflight, NULL);
+```
+
+there's 2 cases:
+- If it is not in a listening state:
+```c
+static void scan_children(struct sock *x, void (*func)(struct unix_sock *),
+			  struct sk_buff_head *hitlist)
+{
+	if (x->sk_state != TCP_LISTEN) {
+		scan_inflight(x, func, hitlist);
+
+```
+In this case, it walks through the socket's receiving queue, and for every socket in this queue:
+	-> it checks that it is flagged as GC candidate
+	-> if yes, it decreases its inflight
+	-> if no, do nothing. 
+
+- If it is in a listening state:
+```c
+	} else {
+		struct sk_buff *skb;
+		struct sk_buff *next;
+		struct unix_sock *u;
+		LIST_HEAD(embryos);
+
+		/* For a listening socket collect the queued embryos
+		 * and perform a scan on them as well.
+		 */
+		spin_lock(&x->sk_receive_queue.lock);
+		skb_queue_walk_safe(&x->sk_receive_queue, skb, next) {
+			u = unix_sk(skb->sk);
+
+			/* An embryo cannot be in-flight, so it's safe
+			 * to use the list link.
+			 */
+			BUG_ON(!list_empty(&u->link));
+			list_add_tail(&u->link, &embryos);
+		}
+		spin_unlock(&x->sk_receive_queue.lock);
+
+		while (!list_empty(&embryos)) {
+			u = list_entry(embryos.next, struct unix_sock, link);
+			scan_inflight(&u->sk, func, hitlist);
+			list_del_init(&u->link);
+		}
+	}
+```
+-> It puts all sockets from the receiving queue into the `&embryos` list 
+-> It calls `scan_inflight` for each one, and then removes it from `&embryos`
+
+
+**Stage 3**:
+
+```c
+	/* Restore the references for children of all candidates,
+	 * which have remaining references.  Do this recursively, so
+	 * only those remain, which form cyclic references.
+	 *
+	 * Use a "cursor" link, to make the list traversal safe, even
+	 * though elements might be moved about.
+	 */
+	list_add(&cursor, &gc_candidates);
+	while (cursor.next != &gc_candidates) {
+		u = list_entry(cursor.next, struct unix_sock, link);
+
+		/* Move cursor to after the current position. */
+		list_move(&cursor, &u->link);
+
+		if (atomic_long_read(&u->inflight) > 0) {
+			list_move_tail(&u->link, &not_cycle_list);
+			__clear_bit(UNIX_GC_MAYBE_CYCLE, &u->gc_flags);
+			scan_children(&u->sk, inc_inflight_move_tail, NULL);
+		}
+	}
+	list_del(&cursor);
+```
+
+find the cycles and fill the hitlist.
+
+
+**Stage 4:**
+
+```c
+	/* Now gc_candidates contains only garbage.  Restore original
+	 * inflight counters for these as well, and remove the skbuffs
+	 * which are creating the cycle(s).
+	 */
+	skb_queue_head_init(&hitlist);
+	list_for_each_entry(u, &gc_candidates, link)
+		scan_children(&u->sk, inc_inflight, &hitlist);
+
+	/* not_cycle_list contains those sockets which do not make up a
+	 * cycle.  Restore these to the inflight list.
+	 */
+	while (!list_empty(&not_cycle_list)) {
+		u = list_entry(not_cycle_list.next, struct unix_sock, link);
+		__clear_bit(UNIX_GC_CANDIDATE, &u->gc_flags);
+		list_move_tail(&u->link, &gc_inflight_list);
+	}
+```
+
+Restore the original values for inflight.
+
+
+**Important Note:**
+```c
+	/* We need io_uring to clean its registered files, ignore all io_uring
+	 * originated skbs. It's fine as io_uring doesn't keep references to
+	 * other io_uring instances and so killing all other files in the cycle
+	 * will put all io_uring references forcing it to go through normal
+	 * release.path eventually putting registered files.
+	 */
+	skb_queue_walk_safe(&hitlist, skb, next_skb) {
+		if (skb->scm_io_uring) {
+			__skb_unlink(skb, &hitlist);
+			skb_queue_tail(&skb->sk->sk_receive_queue, skb);
+		}
+	}
+```
+
+This code snippet is added in commit `0091bfc81741b8d3aeb3b7ab8636f911b2de6e80`. It protects io_uring registered `sbk` from being freed with the GC, it instead let io_uring handle it. \
+So, before this patch, an actively used `sbk` in io_uring could be freed with GC while still being used -> UAF.  
+
+
+
+
 ## CVE-2022-2602
 
 Thadeu Lima de Souza Cascardo reported a POC that looks like this:

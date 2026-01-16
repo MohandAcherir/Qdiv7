@@ -841,6 +841,136 @@ When the sockets are closed, one refcount is decreased by the <code>unix_gc</cod
 </span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">__sys_close</span>(ring<span style="color:#f92672">-&gt;</span>ring_fd); <span style="color:#75715e">// Decrementing ref_count
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
 </span></span></code></pre></div><p>Then by triggering the garbage collector, the ring&rsquo;s <code>fd</code> with <code>inflight == refcount</code>, will be included in the <code>hitlist</code> which will free its queued files in <code>sbk</code> queue, thus, feering the registered file still in use -&gt; <strong>UAF</strong>.</p>
+<h3 id="diving-into-the-actual-gc-handling">Diving into the actual GC handling</h3>
+<p><strong>Stage 1</strong>:</p>
+<p>The GC function grabs sockets from <code>gc_inflight_list</code> (As its name indicates, it contains sockets whose inflight &gt; 0) and fills the <code>gc_candidates</code> list with sockets that have refcount == inflight:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#a6e22e">list_for_each_entry_safe</span>(u, next, <span style="color:#f92672">&amp;</span>gc_inflight_list, link) {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>sk;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">long</span> total_refs;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		total_refs <span style="color:#f92672">=</span> <span style="color:#a6e22e">file_count</span>(sk<span style="color:#f92672">-&gt;</span>sk_socket<span style="color:#f92672">-&gt;</span>file);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">BUG_ON</span>(<span style="color:#f92672">!</span>u<span style="color:#f92672">-&gt;</span>inflight);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">BUG_ON</span>(total_refs <span style="color:#f92672">&lt;</span> u<span style="color:#f92672">-&gt;</span>inflight);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (total_refs <span style="color:#f92672">==</span> u<span style="color:#f92672">-&gt;</span>inflight) { <span style="color:#75715e">// &lt;------------ Checking refcount == inflight
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">list_move_tail</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link, <span style="color:#f92672">&amp;</span>gc_candidates); <span style="color:#75715e">// &lt;------------ Adding to the candidates list
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">__set_bit</span>(UNIX_GC_CANDIDATE, <span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>gc_flags); <span style="color:#75715e">// &lt;----------- flagging the socket as a candidate to GC
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			<span style="color:#a6e22e">__set_bit</span>(UNIX_GC_MAYBE_CYCLE, <span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>gc_flags);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (sk<span style="color:#f92672">-&gt;</span>sk_state <span style="color:#f92672">==</span> TCP_LISTEN) {
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">unix_state_lock_nested</span>(sk, U_LOCK_GC_LISTENER);
+</span></span><span style="display:flex;"><span>				<span style="color:#a6e22e">unix_state_unlock</span>(sk);
+</span></span><span style="display:flex;"><span>			}
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p><strong>Stage 2</strong>:</p>
+<p>For each socket in the candidates list, it calls <code>scan_children</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#75715e">/* Now remove all internal in-flight reference to children of
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * the candidates.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_for_each_entry</span>(u, <span style="color:#f92672">&amp;</span>gc_candidates, link)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">scan_children</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>sk, dec_inflight, NULL);
+</span></span></code></pre></div><p>there&rsquo;s 2 cases:</p>
+<ul>
+<li>If it is not in a listening state:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">scan_children</span>(<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>x, <span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>func)(<span style="color:#66d9ef">struct</span> unix_sock <span style="color:#f92672">*</span>),
+</span></span><span style="display:flex;"><span>			  <span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (x<span style="color:#f92672">-&gt;</span>sk_state <span style="color:#f92672">!=</span> TCP_LISTEN) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">scan_inflight</span>(x, func, hitlist);
+</span></span></code></pre></div><p>In this case, it walks through the socket&rsquo;s receiving queue, and for every socket in this queue:
+-&gt; it checks that it is flagged as GC candidate
+-&gt; if yes, it decreases its inflight
+-&gt; if no, do nothing.</p>
+<ul>
+<li>If it is in a listening state:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	} <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>next;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> unix_sock <span style="color:#f92672">*</span>u;
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">LIST_HEAD</span>(embryos);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/* For a listening socket collect the queued embryos
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">		 * and perform a scan on them as well.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">		 */</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">spin_lock</span>(<span style="color:#f92672">&amp;</span>x<span style="color:#f92672">-&gt;</span>sk_receive_queue.lock);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">skb_queue_walk_safe</span>(<span style="color:#f92672">&amp;</span>x<span style="color:#f92672">-&gt;</span>sk_receive_queue, skb, next) {
+</span></span><span style="display:flex;"><span>			u <span style="color:#f92672">=</span> <span style="color:#a6e22e">unix_sk</span>(skb<span style="color:#f92672">-&gt;</span>sk);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">/* An embryo cannot be in-flight, so it&#39;s safe
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">			 * to use the list link.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">			 */</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">BUG_ON</span>(<span style="color:#f92672">!</span><span style="color:#a6e22e">list_empty</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link));
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">list_add_tail</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link, <span style="color:#f92672">&amp;</span>embryos);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">spin_unlock</span>(<span style="color:#f92672">&amp;</span>x<span style="color:#f92672">-&gt;</span>sk_receive_queue.lock);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">list_empty</span>(<span style="color:#f92672">&amp;</span>embryos)) {
+</span></span><span style="display:flex;"><span>			u <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_entry</span>(embryos.next, <span style="color:#66d9ef">struct</span> unix_sock, link);
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">scan_inflight</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>sk, func, hitlist);
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">list_del_init</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>-&gt; It puts all sockets from the receiving queue into the <code>&amp;embryos</code> list
+-&gt; It calls <code>scan_inflight</code> for each one, and then removes it from <code>&amp;embryos</code></p>
+<p><strong>Stage 3</strong>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#75715e">/* Restore the references for children of all candidates,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * which have remaining references.  Do this recursively, so
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * only those remain, which form cyclic references.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 *
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * Use a &#34;cursor&#34; link, to make the list traversal safe, even
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * though elements might be moved about.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_add</span>(<span style="color:#f92672">&amp;</span>cursor, <span style="color:#f92672">&amp;</span>gc_candidates);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">while</span> (cursor.next <span style="color:#f92672">!=</span> <span style="color:#f92672">&amp;</span>gc_candidates) {
+</span></span><span style="display:flex;"><span>		u <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_entry</span>(cursor.next, <span style="color:#66d9ef">struct</span> unix_sock, link);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">/* Move cursor to after the current position. */</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">list_move</span>(<span style="color:#f92672">&amp;</span>cursor, <span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">atomic_long_read</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>inflight) <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">list_move_tail</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link, <span style="color:#f92672">&amp;</span>not_cycle_list);
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">__clear_bit</span>(UNIX_GC_MAYBE_CYCLE, <span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>gc_flags);
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">scan_children</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>sk, inc_inflight_move_tail, NULL);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_del</span>(<span style="color:#f92672">&amp;</span>cursor);
+</span></span></code></pre></div><p>find the cycles and fill the hitlist.</p>
+<p><strong>Stage 4:</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#75715e">/* Now gc_candidates contains only garbage.  Restore original
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * inflight counters for these as well, and remove the skbuffs
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * which are creating the cycle(s).
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_queue_head_init</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_for_each_entry</span>(u, <span style="color:#f92672">&amp;</span>gc_candidates, link)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">scan_children</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>sk, inc_inflight, <span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* not_cycle_list contains those sockets which do not make up a
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * cycle.  Restore these to the inflight list.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">list_empty</span>(<span style="color:#f92672">&amp;</span>not_cycle_list)) {
+</span></span><span style="display:flex;"><span>		u <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_entry</span>(not_cycle_list.next, <span style="color:#66d9ef">struct</span> unix_sock, link);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">__clear_bit</span>(UNIX_GC_CANDIDATE, <span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>gc_flags);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">list_move_tail</span>(<span style="color:#f92672">&amp;</span>u<span style="color:#f92672">-&gt;</span>link, <span style="color:#f92672">&amp;</span>gc_inflight_list);
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>Restore the original values for inflight.</p>
+<p><strong>Important Note:</strong></p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#75715e">/* We need io_uring to clean its registered files, ignore all io_uring
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * originated skbs. It&#39;s fine as io_uring doesn&#39;t keep references to
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * other io_uring instances and so killing all other files in the cycle
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * will put all io_uring references forcing it to go through normal
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * release.path eventually putting registered files.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_queue_walk_safe</span>(<span style="color:#f92672">&amp;</span>hitlist, skb, next_skb) {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (skb<span style="color:#f92672">-&gt;</span>scm_io_uring) {
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">__skb_unlink</span>(skb, <span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">skb_queue_tail</span>(<span style="color:#f92672">&amp;</span>skb<span style="color:#f92672">-&gt;</span>sk<span style="color:#f92672">-&gt;</span>sk_receive_queue, skb);
+</span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>This code snippet is added in commit <code>0091bfc81741b8d3aeb3b7ab8636f911b2de6e80</code>. It protects io_uring registered <code>sbk</code> from being freed with the GC, it instead let io_uring handle it. <br>
+So, before this patch, an actively used <code>sbk</code> in io_uring could be freed with GC while still being used -&gt; UAF.</p>
 <h2 id="cve-2022-2602">CVE-2022-2602</h2>
 <p>Thadeu Lima de Souza Cascardo reported a POC that looks like this:</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>
