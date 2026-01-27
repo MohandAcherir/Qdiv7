@@ -6,8 +6,15 @@
     <description>Recent content on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
-    <lastBuildDate>Tue, 23 Dec 2025 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Tue, 20 Jan 2026 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://mohandacherir.github.io/Qdiv7/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Notes on io_uring bugs &amp; exploitation</title>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</link>
+      <pubDate>Tue, 20 Jan 2026 00:00:00 +0000</pubDate>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</guid>
+      <description>&lt;h1 id=&#34;notes-on-io_uring-bugs-and-exploitation&#34;&gt;Notes on io_uring bugs and exploitation&lt;/h1&gt;&#xA;&lt;p&gt;In this blog post, i go through the definitions and basics of io_uring subsystem, and then i talk about bugs and their exploits. &lt;br&gt;&#xA;&lt;strong&gt;io_uring&lt;/strong&gt; has been a very targeted subsystem in the linux kernel, to a point where it constituted 60% of kCTF entries; and as most newly introduced features, io_uring - since its introduction in 2019 - has been very bug-prone.&lt;/p&gt;&#xA;&lt;h2 id=&#34;introduction&#34;&gt;Introduction:&lt;/h2&gt;&#xA;&lt;p&gt;&lt;strong&gt;io_uring&lt;/strong&gt; is an API for asynchronous I/O operations.&#xA;Rather than using the traditional syscalls(read, write&amp;hellip;etc), io_uring allows through its API to make zero-copy operations with minimal overhead to communicate with the kernel&#xA;and make the same operations that these syscalls would do. It uses shared buffers between userspace and kernel as a mean for communication and tranferring data.&lt;/p&gt;</description>
+    </item>
     <item>
       <title>Notes on refcounting and Unix Garbage Collector in the Linux Kernel</title>
       <link>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</link>

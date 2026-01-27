@@ -2,8 +2,23 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/exploit/</loc>
+    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
+  </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/tags/kernel/</loc>
-    <lastmod>2025-12-23T00:00:00+00:00</lastmod>
+    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</loc>
+    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/</loc>
+    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/</loc>
+    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/</loc>
+    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/tags/linux/</loc>
     <lastmod>2025-12-23T00:00:00+00:00</lastmod>
@@ -12,15 +27,6 @@
     <lastmod>2025-12-23T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</loc>
-    <lastmod>2025-12-23T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/posts/</loc>
-    <lastmod>2025-12-23T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/</loc>
-    <lastmod>2025-12-23T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/tags/</loc>
     <lastmod>2025-12-23T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</loc>
