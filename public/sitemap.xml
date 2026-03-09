@@ -2,22 +2,28 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/kernel/</loc>
+    <lastmod>2026-03-09T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</loc>
+    <lastmod>2026-03-09T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/</loc>
+    <lastmod>2026-03-09T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/</loc>
+    <lastmod>2026-03-09T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/rcu/</loc>
+    <lastmod>2026-03-09T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/</loc>
+    <lastmod>2026-03-09T00:00:00+00:00</lastmod>
+  </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/tags/exploit/</loc>
     <lastmod>2026-01-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/tags/kernel/</loc>
-    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
-  </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</loc>
-    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/posts/</loc>
-    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/</loc>
-    <lastmod>2026-01-20T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>https://mohandacherir.github.io/Qdiv7/tags/</loc>
     <lastmod>2026-01-20T00:00:00+00:00</lastmod>
   </url><url>
     <loc>https://mohandacherir.github.io/Qdiv7/tags/linux/</loc>
