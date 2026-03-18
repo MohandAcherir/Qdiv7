@@ -6,8 +6,15 @@
     <description>Recent content on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
-    <lastBuildDate>Mon, 09 Mar 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Wed, 18 Mar 2026 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://mohandacherir.github.io/Qdiv7/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Yet Another N-Day Exploit for CVE-2024-0582</title>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</link>
+      <pubDate>Wed, 18 Mar 2026 00:00:00 +0000</pubDate>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
+      <description>&lt;p&gt;In this blog post, we go through the definitions and basics of io_uring subsystem, then we talk about the bug CVE-2024-0582 which gives a very powerful UAF; and at last, we discuss some&#xA;exploitation paths, techniques and the thought process in general.&lt;/p&gt;&#xA;&lt;p&gt;&lt;strong&gt;io_uring&lt;/strong&gt; has been a very targeted subsystem in the linux kernel, to a point where it constituted 60% of kCTF entries some time ago(&lt;a href=&#34;https://security.googleblog.com/2023/06/learnings-from-kctf-vrps-42-linux.html&#34;&gt;source&lt;/a&gt;); and as most newly introduced features, io_uring - since its introduction in 2019 - has been very bug-prone.&lt;/p&gt;</description>
+    </item>
     <item>
       <title>Notes On RCU</title>
       <link>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</link>
