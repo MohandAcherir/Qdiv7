@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <style>
+        :root {
+            --accent-color: #FF4D4D;
+        }
+    </style>
+
+    
+    
+    
+    
+    
+    
+
+    
+    <title>Unix GC Remastered</title>
+    <meta name="description" content="First off, ladies and gentlemen,
+AF_UNIX Garbage Collector Analysis: The garbage collector is a mechanism for cleaning unused objects in the heap and liberate …">
+    <meta name="keywords" content='kernel, graphs, exploitation'>
+
+    <meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Unix GC Remastered">
+    <meta property="og:description" content="First off, ladies and gentlemen,
+AF_UNIX Garbage Collector Analysis: The garbage collector is a mechanism for cleaning unused objects in the heap and liberate …">
+    <meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
+    <meta property="og:image:secure_url" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Unix GC Remastered">
+    <meta name="twitter:description" content="First off, ladies and gentlemen,
+AF_UNIX Garbage Collector Analysis: The garbage collector is a mechanism for cleaning unused objects in the heap and liberate …">
+    <meta property="twitter:domain" content="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
+    <meta property="twitter:url" content="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
+    <meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
+
+    
+    <link rel="canonical" href="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
+
+    
+    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/normalize.min.css" media="print">
+
+    
+    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/main.min.css">
+
+    
+    <link id="dark-theme" rel="stylesheet" href="/Qdiv7/css/dark.min.css">
+
+    
+    <script src="/Qdiv7/js/bundle.min.e31fb3a8e820298d549c9d82ba29c119c6634dfd51ffe05887d4b702ce828c0d.js" integrity="sha256-4x&#43;zqOggKY1UnJ2CuinBGcZjTf1R/&#43;BYh9S3As6CjA0="></script>
+
+    
+    
+</head>
+<body>
+        <script>
+            
+            setThemeByUserPref();
+        </script><header class="header">
+    <nav class="header-nav">
+
+        
+        <div class="avatar">
+            <a href="https://mohandacherir.github.io/Qdiv7/">
+                <img src='images/0074.png' alt="avatar">
+            </a>
+        </div>
+        
+
+        <div class="nav-title">
+            <a class="nav-brand" href="https://mohandacherir.github.io/Qdiv7/">Qdiv7</a>
+        </div>
+
+        <div class="nav-links">
+            
+            <div class="nav-link">
+                <a href="https://mohandacherir.github.io/Qdiv7/posts/" aria-label="" > Posts </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="https://mohandacherir.github.io/Qdiv7/tags/" aria-label="" > Tags </a>
+            </div>
+            
+            <div class="nav-link">
+                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
+            </div>
+            
+
+            <span class="nav-icons-divider"></span>
+            <div class="nav-link dark-theme-toggle">
+                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                <a aria-hidden="true" role="switch">
+                    <span class="theme-toggle-icon" data-feather="moon"></span>
+                </a>
+            </div>
+
+            <div class="nav-link" id="hamburger-menu-toggle">
+                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
+                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
+                    <span data-feather="menu"></span>
+                </a>
+            </div>
+
+            
+            <ul class="nav-hamburger-list visibility-hidden">
+                
+                <li class="nav-item">
+                    <a href="https://mohandacherir.github.io/Qdiv7/posts/" > Posts </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="https://mohandacherir.github.io/Qdiv7/tags/" > Tags </a>
+                </li>
+                
+                <li class="nav-item">
+                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
+                </li>
+                
+                <li class="nav-item dark-theme-toggle">
+                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
+                    <a role="switch">
+                        <span class="theme-toggle-icon" data-feather="moon"></span>
+                    </a>
+                </li>
+            </ul>
+
+        </div>
+    </nav>
+</header>
+<main id="content">
+    <div class="post container">
+    <div class="post-header-section">
+        <h1>Unix GC Remastered</h1>
+
+        
+
+        
+	
+	
+	
+	
+        
+
+	
+
+	
+
+	
+          <small role="doc-subtitle"></small>
+	
+
+	
+          <p class="post-date">April 19, 2026
+           
+          </p>
+	
+
+        <ul class="post-tags">
+          
+           
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/kernel">kernel</a></li>
+           
+         
+           
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/graphs">graphs</a></li>
+           
+         
+           
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/exploitation">exploitation</a></li>
+           
+         
+        </ul>
+    </div>
+
+    <div class="post-content">
+        <p>First off, ladies and gentlemen,</p>
+<h3 id="af_unix-garbage-collector-analysis">AF_UNIX Garbage Collector Analysis:</h3>
+<p>The garbage collector is a mechanism for cleaning unused objects in the heap and liberate memory for other allocations.
+Every subsystem has its own special-purpose GC for freeing certain objects: sockets, nf objects&hellip;etc.</p>
+<p>For socket GC, concretely, when either of <strong>two</strong> conditions are satisfied, the GC function <code>unix_gc()</code> is triggered:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#a6e22e">DECLARE_WORK</span>(unix_gc_work, __unix_gc);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_gc</span>(<span style="color:#66d9ef">void</span>) <span style="color:#75715e">// &lt;-----
+</span></span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">WRITE_ONCE</span>(gc_in_progress, true);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">queue_work</span>(system_dfl_wq, <span style="color:#f92672">&amp;</span>unix_gc_work);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>unix_gc()</code> core is <code>__unix_gc()</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff_head hitlist;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">spin_lock</span>(<span style="color:#f92672">&amp;</span>unix_gc_lock);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>unix_graph_maybe_cyclic) {
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">spin_unlock</span>(<span style="color:#f92672">&amp;</span>unix_gc_lock);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">goto</span> skip_gc;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">__skb_queue_head_init</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (unix_graph_grouped)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_walk_scc_fast</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_walk_scc</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">spin_unlock</span>(<span style="color:#f92672">&amp;</span>unix_gc_lock);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">skb_queue_walk</span>(<span style="color:#f92672">&amp;</span>hitlist, skb) {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">UNIXCB</span>(skb).fp)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">UNIXCB</span>(skb).fp<span style="color:#f92672">-&gt;</span>dead <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">__skb_queue_purge_reason</span>(<span style="color:#f92672">&amp;</span>hitlist, SKB_DROP_REASON_SOCKET_CLOSE);
+</span></span><span style="display:flex;"><span>skip_gc:
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">WRITE_ONCE</span>(gc_in_progress, false);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="concepts">Concepts:</h3>
+<ul>
+<li><strong>unix_socket</strong>:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* The AF_UNIX socket */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> unix_sock {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* WARNING: sk has to be the first member */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock		sk;							 <span style="color:#75715e">// Inheritence
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> unix_address	<span style="color:#f92672">*</span>addr;		 <span style="color:#75715e">// Name of the socket
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> path		path;						 <span style="color:#75715e">// path in the filesystem if bound
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> mutex		iolock, bindlock; <span style="color:#75715e">// Mutex 
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock		<span style="color:#f92672">*</span>peer;				   <span style="color:#75715e">// peer socket connected to
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> list_head	link;
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_long_t</span>		inflight;			 <span style="color:#75715e">// [1] SCM_RIGHTS fd count
+</span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">// ...
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff		<span style="color:#f92672">*</span>oob_skb;		<span style="color:#75715e">// socket&#39;s buffer
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>The most important member for GC is <code>inflight</code> <strong>[1]</strong>.
+A socket is &ldquo;in flight&rdquo; means exactly what it says: It&rsquo;s going from point A to point B i.e: Process A to Process B; and each time, it&rsquo;s being sent - Sent by process A but to yet arrived to/accept by a process B using <strong>SCM_RIGHTS</strong> - the <code>inflight</code> member is incremented until it is accepted, after that it is decremented. When the GC is triggered it looks for sockets that have their <code>refcount == inflight</code> - meaning that these sockets exist only &ldquo;inflight&rdquo; but have no backing in the out-flight realm and thus can no more be accessed from userspace.
+Here&rsquo;s how it is described by this <a href="https://lwn.net/Articles/966730/">LWN</a> article:</p>
+<blockquote>
+<p>&ldquo;Let&rsquo;s say we send a fd of AF_UNIX socket A to B and vice versa and
+close() both sockets.
+When created, each socket&rsquo;s struct file initially has one reference.
+After the fd exchange, both refcounts are bumped up to 2.  Then, close()
+decreases both to 1.  From this point on, no one can touch the file/socket.
+However, the struct file has one refcount and thus never calls the
+release() function of the AF_UNIX socket. That&rsquo;s why we need to track all inflight AF_UNIX sockets and run garbage collection.&rdquo;</p>
+</blockquote>
+<p>The kernel maintains a global variable <code>unix_tot_inflight</code> that incremented for each &ldquo;inflight&rdquo; socket, and decremented each time a socket is accepted.</p>
+<p>Coming back to the <strong>two</strong> conditions mentioned earlier, here they are:</p>
+<ul>
+<li><code>unix_tot_inflight</code> &gt; UNIX_INFLIGHT_TRIGGER_GC == 16000 :</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">READ_ONCE</span>(unix_tot_inflight) <span style="color:#f92672">&gt;</span> UNIX_INFLIGHT_TRIGGER_GC <span style="color:#f92672">&amp;&amp;</span>
+</span></span><span style="display:flex;"><span>	    <span style="color:#f92672">!</span><span style="color:#a6e22e">READ_ONCE</span>(gc_in_progress))
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_gc</span>(); <span style="color:#75715e">// &lt;-----
+</span></span></span></code></pre></div><ul>
+<li>Calling: <code>close(fd)</code> on a socket file descriptor:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> proto_ops unix_stream_ops <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>	.family <span style="color:#f92672">=</span>	PF_UNIX,
+</span></span><span style="display:flex;"><span>	.owner <span style="color:#f92672">=</span>	THIS_MODULE,
+</span></span><span style="display:flex;"><span>	.release <span style="color:#f92672">=</span>	unix_release, <span style="color:#75715e">// &lt;-----
+</span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">unix_release</span>(<span style="color:#66d9ef">struct</span> socket <span style="color:#f92672">*</span>sock)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk <span style="color:#f92672">=</span> sock<span style="color:#f92672">-&gt;</span>sk;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>sk)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	sk<span style="color:#f92672">-&gt;</span>sk_prot<span style="color:#f92672">-&gt;</span><span style="color:#a6e22e">close</span>(sk, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">unix_release_sock</span>(sk, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	sock<span style="color:#f92672">-&gt;</span>sk <span style="color:#f92672">=</span> NULL;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// -----------------------------------------------------------------------------
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_release_sock</span>(<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>sk, <span style="color:#66d9ef">int</span> embrion)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> unix_sock <span style="color:#f92672">*</span>u <span style="color:#f92672">=</span> <span style="color:#a6e22e">unix_sk</span>(sk);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sock <span style="color:#f92672">*</span>skpair;
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">READ_ONCE</span>(unix_tot_inflight))
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_gc</span>(); <span style="color:#75715e">// &lt;---------	/* Garbage collect fds */
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="old-gc-version">Old GC Version</h3>
+<p>One very good article that describes it well is this one from <a href="https://projectzero.google/2022/08/the-quantum-state-of-linux-kernel.html">Google P0 </a> where it goes into the details of the process taking place in <code>unix_gc()</code>, and then analyses an Android In-The-Wild exploit discovered back in 2021. So, it is highly recommended to read it before continuing.
+For my part, i&rsquo;m discussing the new version and then a CVE exploited in Google&rsquo;s KernelCTF.
+Nevertheless, here&rsquo;s a quick recap on this:</p>
+<p><img src="/Qdiv7/images/gc_remastered/Screenshot-gc-1.png" alt=""></p>
+<p>The GC tracks cycles and checks whether inflight != refcount, if not, it is considered to be in a potential cycle.</p>
+<h3 id="new-gc-version">New GC Version</h3>
+<p>As it said in the <a href="https://lwn.net/Articles/966730/">GC Rework</a> article:</p>
+<blockquote>
+<p>&ldquo;&hellip; replaces the current GC implementation that locks each inflight
+socket&rsquo;s receive queue and requires trickiness in other places.
+The new GC does not lock each socket&rsquo;s queue to minimise its effect and
+tries to be lightweight if there is no cyclic reference or no update in
+the shape of the inflight fd graph.&rdquo;</p>
+</blockquote>
+<p>The idea is to represent the <strong>inflight</strong> sockets as vertices and their backing file objects as edges:
+here&rsquo;s an example with sockets A, B, C and D.
+Send:</p>
+<ol>
+<li>A to  C</li>
+<li>C to D and</li>
+<li>Send B to D</li>
+</ol>
+<p>So here, we have 3 inflight sockets which are A, B and C, but not D; and here&rsquo;s how they&rsquo;re seen by the GC:</p>
+<p><img src="/Qdiv7/images/gc_remastered/Screenshot-gc-2.png" alt=""></p>
+<p>It then uses Tarjan&rsquo;s algorithm to form Strongly Connected Components. Why SCCs?
+For any graph(in general), and for any SCC(of more than 1 vertice) inside it, there&rsquo;s necessarily at least one cycle in that SCC:</p>
+<p><img src="/Qdiv7/images/gc_remastered/Screenshot-gc-3.png" alt=""></p>
+<p>The vertices forming a cycle is seen as potential garbage by the GC which actually logical if we think about it; What does it mean for a vertex(socket) to be garbage ? First it must be inflight of course, and be only(potentially) reachable from other inflight sockets, and also must be unreachable from userspace i.e refcount &gt; inflight . So having a cycle, is a necessary but not sufficient condition for having a real Garbage.</p>
+<p>The core function <code>__unix_gc()</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff_head hitlist; <span style="color:#75715e">// [2]
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">__skb_queue_head_init</span>(<span style="color:#f92672">&amp;</span>hitlist); <span style="color:#75715e">// [2.5]
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>At <strong>[2]</strong>, the <code>hitlist</code> is a list that will hold the final sockets what will be freed; it is initialized at <strong>[2.5]</strong>.</p>
+<p>Next up:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>unix_graph_maybe_cyclic) { <span style="color:#75715e">// [3]
+</span></span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">spin_unlock</span>(<span style="color:#f92672">&amp;</span>unix_gc_lock);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">goto</span> skip_gc;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><code>unix_graph_maybe_cyclic</code> is a boolean variable that tracks the state of the graph, so in <strong>[3]</strong>, <code>__unix_gc()</code> aborts if the graph is considered to be in a non-cyclic state. This state is activated when an edge is added from an inflight socket into another inflight socket:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_add_edge</span>(<span style="color:#66d9ef">struct</span> scm_fp_list <span style="color:#f92672">*</span>fpl, <span style="color:#66d9ef">struct</span> unix_edge <span style="color:#f92672">*</span>edge)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> unix_vertex <span style="color:#f92672">*</span>vertex <span style="color:#f92672">=</span> edge<span style="color:#f92672">-&gt;</span>predecessor<span style="color:#f92672">-&gt;</span>vertex;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>vertex) {
+</span></span><span style="display:flex;"><span>		vertex <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_first_entry</span>(<span style="color:#f92672">&amp;</span>fpl<span style="color:#f92672">-&gt;</span>vertices, <span style="color:#a6e22e">typeof</span>(<span style="color:#f92672">*</span>vertex), entry);
+</span></span><span style="display:flex;"><span>		vertex<span style="color:#f92672">-&gt;</span>index <span style="color:#f92672">=</span> unix_vertex_unvisited_index;
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	vertex<span style="color:#f92672">-&gt;</span>out_degree<span style="color:#f92672">++</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_add_tail</span>(<span style="color:#f92672">&amp;</span>edge<span style="color:#f92672">-&gt;</span>vertex_entry, <span style="color:#f92672">&amp;</span>vertex<span style="color:#f92672">-&gt;</span>edges);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">unix_update_graph</span>(<span style="color:#a6e22e">unix_edge_successor</span>(edge)); <span style="color:#75715e">// &lt;------
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>In <code>unix_update_graph</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_update_graph</span>(<span style="color:#66d9ef">struct</span> unix_vertex <span style="color:#f92672">*</span>vertex)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* If the receiver socket is not inflight, no cyclic
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * reference could be formed.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>vertex)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">WRITE_ONCE</span>(unix_graph_state, UNIX_GRAPH_MAYBE_CYCLIC); <span style="color:#75715e">// &lt;------
+</span></span></span><span style="display:flex;"><span>	unix_graph_grouped <span style="color:#f92672">=</span> false; <span style="color:#75715e">// &lt;---------
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>This forces the GC to run if it senses some cycles are hanging around; notice that it sets <code>unix_graph_grouped</code> to <code>false</code> too.</p>
+<p>After that, the real work starts:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">__skb_queue_head_init</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (unix_graph_grouped)
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_walk_scc_fast</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">unix_walk_scc</span>(<span style="color:#f92672">&amp;</span>hitlist);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p><strong><code>unix_walk_scc_fast()</code></strong> or <strong><code>unix_walk_scc()</code></strong> are called depending on whether the graph is grouped into Strongly Connected Components or not.</p>
+<p><code>1)Slow Path</code>:
+This where the Strongly Connected Components are created:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_walk_scc</span>(<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> last_index <span style="color:#f92672">=</span> UNIX_VERTEX_INDEX_START;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	unix_graph_maybe_cyclic <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>	unix_vertex_max_scc_index <span style="color:#f92672">=</span> UNIX_VERTEX_INDEX_START;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Visit every vertex exactly once.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * __unix_walk_scc() moves visited vertices to unix_visited_vertices.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">list_empty</span>(<span style="color:#f92672">&amp;</span>unix_unvisited_vertices)) { <span style="color:#75715e">// [3.5]
+</span></span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> unix_vertex <span style="color:#f92672">*</span>vertex;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		vertex <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_first_entry</span>(<span style="color:#f92672">&amp;</span>unix_unvisited_vertices, <span style="color:#a6e22e">typeof</span>(<span style="color:#f92672">*</span>vertex), entry);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">__unix_walk_scc</span>(vertex, <span style="color:#f92672">&amp;</span>last_index, hitlist);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_replace_init</span>(<span style="color:#f92672">&amp;</span>unix_visited_vertices, <span style="color:#f92672">&amp;</span>unix_unvisited_vertices);
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">swap</span>(unix_vertex_unvisited_index, unix_vertex_grouped_index);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	unix_graph_grouped <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>The vertex indexing starts at <code>UNIX_VERTEX_INDEX_START</code>, and at the beginning the of <code>unix_walk_scc</code> it assumes that the graph is not cyclic.
+The graph walk begins at [8] by iterating over the unvisited vertices as in the algorithm.</p>
+<blockquote>
+<p>Note: Iterating through all vertices as in [3.5] does not really happen effectively; if the graph is at last Weakly Connected it needs only one single iteration. So, iterating over many vertices is useful only when the graph is a non connected set of graphs i.e a <strong>forest</strong>. So, that&rsquo;s why it has a good algorithmic complexity <code>O(|V|+|E|)</code> where V is the number of vertices, and E the number of edges.</p>
+</blockquote>
+<h3 id="tarjans-algorithm">Tarjan&rsquo;s Algorithm:</h3>
+<p>The algorithm takes a <a href="https://en.wikipedia.org/wiki/Directed_graph" title="Directed graph">directed graph</a> as input, and forms its strongly connected components. Each vertex of the graph appears in exactly one of the strongly connected component. Any vertex that is not on a directed cycle forms a strongly connected component all by itself.
+The basic idea is to start from an arbitrary vertex that is associated to a pair (<code>index</code>, <code>scc_value</code>), and then do a Depth-First-Search on it recursively; the goal is to reach this starting vertex again to propagate its <code>scc_value</code> to form its containing SCC.</p>
+<p>You can find all the details in this <a href="https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm">Wikipedia page</a>.</p>
+<p><img src="/Qdiv7/images/gc_remastered/tarjan.gif" alt=""></p>
+<p>Here&rsquo;s the Pseudo-code for a better understanding(I hope at least ;-):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>For each unvisited vertex v:
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">__unix_walk_scc</span>(v, last_index, hitlist)
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">__unix_walk_scc</span>(v, last_index, hitlist)<span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>	vertex_S, edge_S, edge
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">|------------------------------------|</span>
+</span></span><span style="display:flex;"><span>next_vertex:
+</span></span><span style="display:flex;"><span>	vertex_S.<span style="color:#a6e22e">push</span>(v)
+</span></span><span style="display:flex;"><span>	v.index <span style="color:#f92672">&lt;-</span> last_index
+</span></span><span style="display:flex;"><span>	v.scc_index <span style="color:#f92672">&lt;-</span> last_index
+</span></span><span style="display:flex;"><span>	last_index <span style="color:#f92672">+=</span> <span style="color:#ae81ff">1</span>
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">for</span> each edge e: (v, w) in the Graph:
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// w == e.successor
+</span></span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> vertex w is not yet visited:
+</span></span><span style="display:flex;"><span>			edge_S.<span style="color:#a6e22e">push</span>(e: (v, w))
+</span></span><span style="display:flex;"><span>			v <span style="color:#f92672">&lt;-</span> w
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">goto</span> next_vertex
+</span></span><span style="display:flex;"><span>			<span style="color:#f92672">|------------------------------|</span>
+</span></span><span style="display:flex;"><span>		        <span style="color:#f92672">-&gt;</span> prev_vertex: i.e: returning from the recursion
+</span></span><span style="display:flex;"><span>			edge <span style="color:#f92672">=</span> edge_S.<span style="color:#a6e22e">pop</span>() or <span style="color:#a6e22e">getFirst</span>() <span style="color:#f92672">?</span>
+</span></span><span style="display:flex;"><span>			delete edge from edge_S
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// backtrack
+</span></span></span><span style="display:flex;"><span>			w <span style="color:#f92672">&lt;-</span> v
+</span></span><span style="display:flex;"><span>			v <span style="color:#f92672">&lt;-</span> edge.predecessor.vertex
+</span></span><span style="display:flex;"><span>			v.scc_index <span style="color:#f92672">=</span> <span style="color:#a6e22e">min</span>(v.scc_index, w.scc_index)
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> w is not in another SCC:
+</span></span><span style="display:flex;"><span>			v.scc_index <span style="color:#f92672">=</span> <span style="color:#a6e22e">min</span>(v.scc_index, w.scc_index
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">|-----------------------------------------------|</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> v.index <span style="color:#f92672">==</span> v.scc_index:
+</span></span><span style="display:flex;"><span>		scc <span style="color:#f92672">&lt;-</span> {}
+</span></span><span style="display:flex;"><span>		scc_dead <span style="color:#f92672">=</span> true
+</span></span><span style="display:flex;"><span>		
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// vertex_S == [SCC(0)][SCC(1)][...][SCC(N)]
+</span></span></span><span style="display:flex;"><span>		<span style="color:#75715e">// vertex_S == [SCC(0)][SCC(1)][...][SCC(N-1)][v ...]
+</span></span></span><span style="display:flex;"><span>		<span style="color:#75715e">// cutting vertex_S taking the [v ...] SCC
+</span></span></span><span style="display:flex;"><span>		<span style="color:#75715e">//__list_cut_position(&amp;scc, &amp;vertex_stack, &amp;vertex-&gt;scc_entry);
+</span></span></span><span style="display:flex;"><span>		scc <span style="color:#f92672">&lt;-</span> [v ...]
+</span></span><span style="display:flex;"><span>		
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">while</span> scc in not empty:
+</span></span><span style="display:flex;"><span>			u <span style="color:#f92672">&lt;-</span> scc.<span style="color:#a6e22e">pop</span>() <span style="color:#75715e">// not a pop, but takes the last elem
+</span></span></span><span style="display:flex;"><span>			<span style="color:#75715e">// So maybe add: scc.push(u) ;-)
+</span></span></span><span style="display:flex;"><span>			<span style="color:#75715e">// adding it to the visited vertices
+</span></span></span><span style="display:flex;"><span>			unix_visited_vertices.<span style="color:#a6e22e">add</span>(u)
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// marking it as grouped
+</span></span></span><span style="display:flex;"><span>			u.index <span style="color:#f92672">&lt;-</span> unix_vertex_grouped_index
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span>(scc_dead)<span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>				scc_dead <span style="color:#f92672">&lt;-</span> <span style="color:#a6e22e">unix_vertex_dead</span>(v);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> scc_dead:
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">// purge
+</span></span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">unix_collect_skb</span>(<span style="color:#f92672">&amp;</span>scc, hitlist);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">else</span><span style="color:#f92672">:</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> unix_vertex_max_scc_index <span style="color:#f92672">&lt;</span> v.scc_index:
+</span></span><span style="display:flex;"><span>				unix_vertex_max_scc_index <span style="color:#f92672">&lt;-</span> vertex.scc_index;
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> not unix_graph_maybe_cyclic:
+</span></span><span style="display:flex;"><span>			        unix_graph_maybe_cyclic<span style="color:#f92672">&lt;-</span><span style="color:#a6e22e">unix_scc_cyclic</span>(<span style="color:#f92672">&amp;</span>scc);
+</span></span><span style="display:flex;"><span>	<span style="color:#f92672">|-----------------------------------------------|</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Need backtracking ? It is basically recursion
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> edge_stack is not empty
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">goto</span> prev_vertex;
+</span></span></code></pre></div><hr>
+<p><code>2) Fast Path</code>:
+This path assumes that the SCCs are already formed, and the graph is unchanged.
+It iterates through all the unvisited vertices one by one <code>[4]</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_walk_scc_fast</span>(<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
+</span></span><span style="display:flex;"><span>{
+</span></span><span style="display:flex;"><span>	unix_graph_maybe_cyclic <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">while</span> (<span style="color:#f92672">!</span><span style="color:#a6e22e">list_empty</span>(<span style="color:#f92672">&amp;</span>unix_unvisited_vertices)) { <span style="color:#75715e">// [4]
+</span></span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> unix_vertex <span style="color:#f92672">*</span>vertex;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> list_head scc;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">bool</span> scc_dead <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		vertex <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_first_entry</span>(<span style="color:#f92672">&amp;</span>unix_unvisited_vertices, <span style="color:#a6e22e">typeof</span>(<span style="color:#f92672">*</span>vertex), entry);
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">list_add</span>(<span style="color:#f92672">&amp;</span>scc, <span style="color:#f92672">&amp;</span>vertex<span style="color:#f92672">-&gt;</span>scc_entry);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">list_for_each_entry_reverse</span>(vertex, <span style="color:#f92672">&amp;</span>scc, scc_entry) { <span style="color:#75715e">// [5]
+</span></span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">list_move_tail</span>(<span style="color:#f92672">&amp;</span>vertex<span style="color:#f92672">-&gt;</span>entry, <span style="color:#f92672">&amp;</span>unix_visited_vertices); <span style="color:#75715e">// [6]
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">if</span> (scc_dead)
+</span></span><span style="display:flex;"><span>				scc_dead <span style="color:#f92672">=</span> <span style="color:#a6e22e">unix_vertex_dead</span>(vertex); <span style="color:#75715e">// [7]
+</span></span></span><span style="display:flex;"><span>		}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (scc_dead)
+</span></span><span style="display:flex;"><span>			<span style="color:#a6e22e">unix_collect_skb</span>(<span style="color:#f92672">&amp;</span>scc, hitlist);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>unix_graph_maybe_cyclic)
+</span></span><span style="display:flex;"><span>			unix_graph_maybe_cyclic <span style="color:#f92672">=</span> <span style="color:#a6e22e">unix_scc_cyclic</span>(<span style="color:#f92672">&amp;</span>scc);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>		<span style="color:#a6e22e">list_del</span>(<span style="color:#f92672">&amp;</span>scc);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#a6e22e">list_replace_init</span>(<span style="color:#f92672">&amp;</span>unix_visited_vertices, <span style="color:#f92672">&amp;</span>unix_unvisited_vertices);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><p>It starts by picking the first vertex in  <code>unix_unvisited_vertices</code> and initializes with it the Strongly Connected Component variable <code>scc</code>.
+In [5], it goes through all the vertices of the <code>scc</code> in the reverse order, and each vertex marked as visited by putting it into <code>unix_visited_vertices</code> [7]; in each iteration, if the previous vertex was dead, the current one is also checked [6] with  <code>unix_vertex_dead(vertex)</code>.
+If the last vertex is marked as &ldquo;dead&rdquo;, the whole SCC is put into the <code>hitlist</code> to be purged [7].</p>
+<h3 id="cve-2025-40214-kctf-entry">CVE-2025-40214: kCTF entry</h3>
+<p>The patch:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-diff" data-lang="diff"><span style="display:flex;"><span>diff --git a/net/unix/garbage.c b/net/unix/garbage.c
+</span></span><span style="display:flex;"><span>index 684ab03137b6c..65396a4e1b07e 100644
+</span></span><span style="display:flex;"><span><span style="color:#f92672">--- a/net/unix/garbage.c
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+++ b/net/unix/garbage.c
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -145,6 +145,7 @@ enum unix_vertex_index {
+</span></span></span><span style="display:flex;"><span> };
+</span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span> static unsigned long unix_vertex_unvisited_index = UNIX_VERTEX_INDEX_MARK1;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">+static unsigned long unix_vertex_max_scc_index = UNIX_VERTEX_INDEX_START;
+</span></span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span> static void unix_add_edge(struct scm_fp_list *fpl, struct unix_edge *edge)
+</span></span><span style="display:flex;"><span> {
+</span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -153,6 +154,7 @@ static void unix_add_edge(struct scm_fp_list *fpl, struct unix_edge *edge)
+</span></span></span><span style="display:flex;"><span> 	if (!vertex) {
+</span></span><span style="display:flex;"><span> 		vertex = list_first_entry(&amp;fpl-&gt;vertices, typeof(*vertex), entry);
+</span></span><span style="display:flex;"><span> 		vertex-&gt;index = unix_vertex_unvisited_index;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">+		vertex-&gt;scc_index = ++unix_vertex_max_scc_index;
+</span></span></span><span style="display:flex;"><span> 		vertex-&gt;out_degree = 0;
+</span></span><span style="display:flex;"><span> 		INIT_LIST_HEAD(&amp;vertex-&gt;edges);
+</span></span><span style="display:flex;"><span> 		INIT_LIST_HEAD(&amp;vertex-&gt;scc_entry);
+</span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -489,10 +491,15 @@ prev_vertex:
+</span></span></span><span style="display:flex;"><span> 				scc_dead = unix_vertex_dead(v);
+</span></span><span style="display:flex;"><span> 		}
+</span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span><span style="color:#f92672">-		if (scc_dead)
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+		if (scc_dead) {
+</span></span></span><span style="display:flex;"><span> 			unix_collect_skb(&amp;scc, hitlist);
+</span></span><span style="display:flex;"><span><span style="color:#f92672">-		else if (!unix_graph_maybe_cyclic)
+</span></span></span><span style="display:flex;"><span><span style="color:#f92672">-			unix_graph_maybe_cyclic = unix_scc_cyclic(&amp;scc);
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+		} else {
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+			if (unix_vertex_max_scc_index &lt; vertex-&gt;scc_index)
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+				unix_vertex_max_scc_index = vertex-&gt;scc_index;
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+			if (!unix_graph_maybe_cyclic)
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+				unix_graph_maybe_cyclic = unix_scc_cyclic(&amp;scc);
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+		}
+</span></span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span> 		list_del(&amp;scc);
+</span></span><span style="display:flex;"><span> 	}
+</span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -507,6 +514,7 @@ static void unix_walk_scc(struct sk_buff_head *hitlist)
+</span></span></span><span style="display:flex;"><span> 	unsigned long last_index = UNIX_VERTEX_INDEX_START;
+</span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span> 	unix_graph_maybe_cyclic = false;
+</span></span><span style="display:flex;"><span><span style="color:#a6e22e">+	unix_vertex_max_scc_index = UNIX_VERTEX_INDEX_START;
+</span></span></span><span style="display:flex;"><span> 
+</span></span><span style="display:flex;"><span> 	/* Visit every vertex exactly once.
+</span></span><span style="display:flex;"><span> 	 * __unix_walk_scc() moves visited vertices to unix_visited_vertices.
+</span></span></code></pre></div><p>Trying to do the POC:</p>
+<blockquote>
+<p>&ldquo;The repro consists of three stages:</p>
+<ol>
+<li>
+<pre><code>1-a. Create a single cyclic reference with many sockets
+</code></pre>
+1-b. close() all sockets
+1-c -&gt; Trigger GC</li>
+<li>
+<pre><code> 2-a. Pass sk-A to an embryo sk-B 
+</code></pre>
+</li>
+</ol>
+</blockquote>
+<pre><code>   2-b. Pass sk-X to sk-X
+   2-c. Trigger GC 
+</code></pre>
+<blockquote>
+<ol start="3">
+<li>
+<pre><code>3-a. accept() the embryo sk-B
+</code></pre>
+3-b. Pass sk-B to sk-C
+3-c. close() the in-flight sk-A
+3-d. Trigger GC&rdquo;</li>
+</ol>
+</blockquote>
+<p><strong>Step I</strong>: is used for heap spraying, making a newly allocated vertex have -&gt;
+<code>vertex-&gt;scc_index == 2</code> (UNIX_VERTEX_INDEX_START) set by the GC in <code>unix_walk_scc()</code> at [1-c].</p>
+<p><strong>Step II</strong>: <code>sk-A</code> and <code>sk-X</code> are linked to <code>unix_unvisited_vertices</code>, and <code>unix_walk_scc()</code> groups them into two different SCCs:
+<code>unix_sk(sk-A)-&gt;vertex-&gt;scc_indesx = 2</code> (UNIX_VERTEX_INDEX_START) &amp;
+<code>unix_sk(sk-X)-&gt;vertex-&gt;scc_index = 3</code>.</p>
+<p><strong>Step III</strong>: form A -&gt; B -&gt; (C), this way B will be mistaken to be in A&rsquo;s SCC by <code>unix_add_edge()</code> which do not initialize <code>v-&gt;scc_index</code> due to the spraying in Step I.
+And when the GC runs, we get A freed even though it&rsquo;s not dead.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#define _GNU_SOURCE
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;linux/io_uring.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;unistd.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;fcntl.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/socket.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;liburing.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdlib.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/mman.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;linux/userfaultfd.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/syscall.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;unistd.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/wait.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/ioctl.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;err.h&gt;</span><span style="color:#75715e">
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [...]
+</span></span></span></code></pre></div>
+        
+    </div>
+
+    <div class="prev-next">
+        
+    </div>
+
+    
+    
+    
+</div>
+
+
+
+    
+
+        </main><footer class="footer">
+    
+    
+
+    
+
+    
+
+    
+
+    <span>
+        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
+    </span>
+</footer>
+</body>
+</html>

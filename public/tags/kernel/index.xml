@@ -6,8 +6,15 @@
     <description>Recent content in Kernel on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
-    <lastBuildDate>Mon, 09 Mar 2026 00:00:00 +0000</lastBuildDate>
+    <lastBuildDate>Sun, 19 Apr 2026 00:00:00 +0000</lastBuildDate>
     <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/kernel/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Unix GC Remastered</title>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</link>
+      <pubDate>Sun, 19 Apr 2026 00:00:00 +0000</pubDate>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</guid>
+      <description>&lt;p&gt;First off, ladies and gentlemen,&lt;/p&gt;&#xA;&lt;h3 id=&#34;af_unix-garbage-collector-analysis&#34;&gt;AF_UNIX Garbage Collector Analysis:&lt;/h3&gt;&#xA;&lt;p&gt;The garbage collector is a mechanism for cleaning unused objects in the heap and liberate memory for other allocations.&#xA;Every subsystem has its own special-purpose GC for freeing certain objects: sockets, nf objects&amp;hellip;etc.&lt;/p&gt;&#xA;&lt;p&gt;For socket GC, concretely, when either of &lt;strong&gt;two&lt;/strong&gt; conditions are satisfied, the GC function &lt;code&gt;unix_gc()&lt;/code&gt; is triggered:&lt;/p&gt;&#xA;&lt;div class=&#34;highlight&#34;&gt;&lt;pre tabindex=&#34;0&#34; style=&#34;color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;&#34;&gt;&lt;code class=&#34;language-c&#34; data-lang=&#34;c&#34;&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;static&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;DECLARE_WORK&lt;/span&gt;(unix_gc_work, __unix_gc);&#xA;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&#xA;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt; &lt;span style=&#34;color:#a6e22e&#34;&gt;unix_gc&lt;/span&gt;(&lt;span style=&#34;color:#66d9ef&#34;&gt;void&lt;/span&gt;) &lt;span style=&#34;color:#75715e&#34;&gt;// &amp;lt;-----&#xA;&lt;/span&gt;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;{&#xA;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&#x9;&lt;span style=&#34;color:#a6e22e&#34;&gt;WRITE_ONCE&lt;/span&gt;(gc_in_progress, true);&#xA;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;&#x9;&lt;span style=&#34;color:#a6e22e&#34;&gt;queue_work&lt;/span&gt;(system_dfl_wq, &lt;span style=&#34;color:#f92672&#34;&gt;&amp;amp;&lt;/span&gt;unix_gc_work);&#xA;&lt;/span&gt;&lt;/span&gt;&lt;span style=&#34;display:flex;&#34;&gt;&lt;span&gt;}&#xA;&lt;/span&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;p&gt;&lt;code&gt;unix_gc()&lt;/code&gt; core is &lt;code&gt;__unix_gc()&lt;/code&gt;:&lt;/p&gt;</description>
+    </item>
     <item>
       <title>Notes On RCU</title>
       <link>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</link>
