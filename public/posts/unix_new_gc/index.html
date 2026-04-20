@@ -614,39 +614,10 @@ Stage 3:  A → C → D       (fresh vertex allocs, stale scc_index=2)
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">close</span>(skB);
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">kick_gc</span>();
 </span></span></code></pre></div><p><code>close(skA)</code> drops its <code>file_count</code> to match <code>out_degree</code> — the dead-check precondition. The fast path runs, and because <code>sk-A</code>&rsquo;s legitimate <code>scc_index=2</code> aliases the fresh-and-stale <code>scc_index=2</code> on the <code>sk-A→sk-C</code> edge&rsquo;s successor, <code>unix_vertex_dead(sk-A)</code> returns true and sk-A&rsquo;s receive queue is purged.</p>
-<h4 id="stage-4--recover-sk-a-via-sk-c-and-touch-it">Stage 4 — recover <code>sk-A</code> via sk-C and touch it</h4>
-<p>Because <code>sk-A</code> is in <code>sk-C</code>&rsquo;s receive queue (it carried itself via <code>send_fd(skA, skA, &amp;cAddr, cLen)</code>), a <code>recvmsg()</code> on <code>skC</code> yields a new fd that still points at whatever the kernel thinks <code>sk-A</code> is after the purge:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> uaf_fd <span style="color:#f92672">=</span> <span style="color:#a6e22e">recv_fd</span>(skC);
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">write</span>(uaf_fd, buf, <span style="color:#ae81ff">100</span>);   <span style="color:#75715e">/* touches (potentially freed) sk-A state */</span>
-</span></span></code></pre></div><p><strong>What this variant buys:</strong> no listener, no embryo, no <code>accept()</code>, no <code>sk-X → sk-X</code>, and no DGRAM carrier for a stream-EISCONN workaround. One fewer graph-state transition to reason about, and the <code>scc_index</code> aliasing falls out of the simpler two-socket SCC directly.</p>
-<p><strong>The trade-off:</strong> both <code>sk-A</code> and <code>sk-B</code> are inflight and user-held simultaneously at the moment the bug fires, so reasoning about exactly which vertex the fast path picks up first is slightly hairier. In practice the <code>sk-A → sk-C</code> edge is what the fast path walks into, and the aliasing holds.</p>
-<h3 id="observable-signature">Observable signature</h3>
-<p>The embryo PoC plants a row of <code>pipe(2)</code> read-ends inside sk-A&rsquo;s receive queue <em>before</em> sk-A goes inflight. Pipes make excellent victims:</p>
-<ul>
-<li><code>pipe_inode_info</code> is not AF_UNIX, so <code>unix_get_socket()</code> returns NULL in <code>unix_add_edges()</code> — no <code>unix_vertex</code> kmalloc, freelist stays pristine.</li>
-<li>Each planted pipe read-end has <code>file_count == 1</code> after we drop our user fd (the inflight ref in sk-A&rsquo;s queue is the only reference).</li>
-<li>When the bad purge runs, every planted <code>pipe_read</code> is <code>fput()</code>&rsquo;d to zero → pipe torn down → <code>write()</code> on the matching <code>pipe_write</code> returns <code>EPIPE</code>.</li>
-</ul>
+<p><img src="/Qdiv7/images/gc_remastered/Screenshot-gc-4.png" alt=""></p>
 <p>On a vulnerable kernel with the printk patch from the annex added:</p>
-<pre tabindex="0"><code>[+] SCC DEAD Confirmed
-[=] pipe write results: 11 EPIPE / 0 OK (of 11 planted)
-[+] BUG TRIGGERED: sk-A&#39;s queue was purged while still live
-</code></pre><p>Every <code>EPIPE</code> is a pipe that got freed because the kernel wrongly declared sk-A dead. Every <code>sk gets destroyed</code> printk line inside <code>__unix_gc</code>&rsquo;s purge window after <code>SCC DEAD Confirmed</code> is a <code>unix_sock</code> that the same bad verdict freed prematurely.</p>
-<h3 id="a-word-on-kasan-reachability">A word on KASAN reachability</h3>
-<p>A natural question: does a KASAN-reportable use-after-free fall out of this primitive? The short answer is <strong>no, not in single-process form</strong>. The primitive produces a <em>logical</em> UAF — objects freed that still had legitimate producers — but the kernel&rsquo;s purge chain tears down graph state (edges, vertices) in lockstep with the frees via <code>unix_destruct_scm → unix_destroy_fpl → unix_del_edges → unix_free_vertices</code>. Nothing is left dangling for a subsequent dereference to catch.</p>
-<p>Why the single-process form cannot race its way to a splat either:</p>
-<ul>
-<li>The bug precondition is <code>total_ref == out_degree</code>, which requires the inflight ref to be the <em>only</em> reference on sk-A. Keeping a user fd open on sk-A, or <code>dup()</code>&lsquo;ing before closing, bumps <code>total_ref</code> past <code>out_degree</code> and the dead-check fails.</li>
-<li><code>unix_collect_skb()</code> holds <code>sk-&gt;sk_receive_queue-&gt;lock</code> across the splice. A racing <code>recvmsg()</code> on the same queue serialises — it sees either the pre-splice queue (full) or the post-splice queue (empty), never a torn-down middle state.</li>
-<li><code>fput()</code> is atomic. Cross-thread <code>fput</code> races do not produce dangling pointers.</li>
-</ul>
-<p>KASAN-visible exploitation of this bug class requires one of:</p>
-<ol>
-<li>A <strong>non-fdtable kernel refholder</strong> that survives the bad <code>fput</code> — <code>io_uring</code> fixed files, sockmap, BPF <code>sk_lookup</code>. The holder keeps a <code>struct file *</code> or <code>struct sock *</code> pointer alive through paths that do not go through the fdtable refcount, so when the bad purge drops <code>file_count</code> to 0 and frees the object, that pointer dangles. A subsequent op through the holding subsystem splats.</li>
-<li>A <strong>second bug</strong> widening the splice/purge window — some concurrent kernel path that reads <code>skb-&gt;sk</code> <em>after</em> splice but <em>before</em> <code>__skb_queue_purge</code> runs the destructor.</li>
-</ol>
-<p>Without one of those chained in, the reachable kernel-side evidence is the <code>SCC DEAD Confirmed</code> printk plus the destructor cascade, and the user-space-visible evidence is the <code>EPIPE</code> oracle (or a <code>write()</code> that quietly succeeds on a freed socket, in the <code>recv_fd(skC)</code> variant).</p>
-<hr>
+<pre tabindex="0"><code>[+] SCC DEAD Confirmed : Right before returning &#39;true&#39; in unix_vertex_dead()
+</code></pre><hr>
 <h2 id="annex-1--full-poc-embryo--listener-variant">Annex 1 — full PoC (embryo / listener variant)</h2>
 <p>The canonical three-stage reproducer, ported from the advisory and instrumented with the pipe-EPIPE oracle. Build:</p>
 <pre tabindex="0"><code>gcc -O2 -Wall -o poc_unix_gc_scc_index_uaf poc_unix_gc_scc_index_uaf.c
@@ -1260,8 +1231,6 @@ sk gets destroyed
         <li><a href="#root-cause-in-one-sentence">Root cause in one sentence</a></li>
         <li><a href="#canonical-three-stage-exploit">Canonical three-stage exploit</a></li>
         <li><a href="#my-own-strategy--b--a--c--d-no-listener-no-embryo">My own strategy — <code>B ↔ A → C → D</code> (no listener, no embryo)</a></li>
-        <li><a href="#observable-signature">Observable signature</a></li>
-        <li><a href="#a-word-on-kasan-reachability">A word on KASAN reachability</a></li>
       </ul>
     </li>
     <li><a href="#annex-1--full-poc-embryo--listener-variant">Annex 1 — full PoC (embryo / listener variant)</a>
