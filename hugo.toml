@@ -48,4 +48,5 @@ avatarURL = "images/0074.png"
     ]
     avatarURL = "images/0074.png"
     #logo = "../images/0072.png"
-	
+    dateFormat = "January 2, 2006"
+
