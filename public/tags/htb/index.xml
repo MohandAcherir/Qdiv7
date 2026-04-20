@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>HTB on Qdiv7</title>
-    <link>https://mohandacherir.github.io/Qdiv7/tags/htb/</link>
+    <link>http://localhost:1313/Qdiv7/tags/htb/</link>
     <description>Recent content in HTB on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Sun, 15 Dec 2024 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/htb/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="http://localhost:1313/Qdiv7/tags/htb/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>HTB Permx</title>
-      <link>https://mohandacherir.github.io/Qdiv7/posts/htb-permx/</link>
+      <link>http://localhost:1313/Qdiv7/posts/htb-permx/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>https://mohandacherir.github.io/Qdiv7/posts/htb-permx/</guid>
+      <guid>http://localhost:1313/Qdiv7/posts/htb-permx/</guid>
       <description>&lt;h1 id=&#34;permx-walkthrough&#34;&gt;Permx walkthrough&lt;/h1&gt;&#xA;&lt;p&gt;&lt;strong&gt;OS&lt;/strong&gt;: Linux, &lt;strong&gt;Difficulty&lt;/strong&gt;: Easy&lt;/p&gt;&#xA;&lt;h2 id=&#34;enumeration&#34;&gt;Enumeration&lt;/h2&gt;&#xA;&lt;p&gt;Ports scan: &lt;code&gt;nmap -p- -sCV 10.10.11.23&lt;/code&gt;&lt;/p&gt;&#xA;&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;PORT   STATE SERVICE VERSION&#xA;22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.10 (Ubuntu Linux; protocol 2.0)&#xA;| ssh-hostkey: &#xA;|   256 e2:5c:5d:8c:47:3e:d8:72:f7:b4:80:03:49:86:6d:ef (ECDSA)&#xA;|_  256 1f:41:02:8e:6b:17:18:9c:a0:ac:54:23:e9:71:30:17 (ED25519)&#xA;80/tcp open  http    Apache httpd 2.4.52&#xA;|_http-title: Did not follow redirect to fer&#xA;|_http-server-header: Apache/2.4.52 (Ubuntu)&#xA;Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel&#xA;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;There&amp;rsquo;s no available exploit for this version of Openssh, and passwordless connexions are not possible.&lt;br&gt;&#xA;The http server redirects to &lt;code&gt;permx.htb/&lt;/code&gt;, so i added &lt;code&gt;10.10.11.23 permx.htb&lt;/code&gt; to &lt;code&gt;/etc/hosts&lt;/code&gt;: &lt;code&gt; echo &amp;quot;10.10.11.23 permx.htb&amp;quot; | sudo tee -a /etc/hosts&amp;quot;&lt;/code&gt;.&lt;/p&gt;</description>
     </item>
   </channel>

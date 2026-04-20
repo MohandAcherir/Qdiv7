@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Io_uring on Qdiv7</title>
-    <link>https://mohandacherir.github.io/Qdiv7/tags/io_uring/</link>
+    <link>http://localhost:1313/Qdiv7/tags/io_uring/</link>
     <description>Recent content in Io_uring on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Wed, 18 Mar 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/io_uring/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="http://localhost:1313/Qdiv7/tags/io_uring/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Yet Another Exploit for CVE-2024-0582</title>
-      <link>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</link>
+      <link>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</link>
       <pubDate>Wed, 18 Mar 2026 00:00:00 +0000</pubDate>
-      <guid>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
+      <guid>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
       <description>&lt;h2 id=&#34;introduction&#34;&gt;Introduction&lt;/h2&gt;&#xA;&lt;p&gt;&lt;strong&gt;io_uring&lt;/strong&gt; has been a heavily targeted subsystem in the Linux kernel — at one point it constituted 60% of kCTF entries (&lt;a href=&#34;https://security.googleblog.com/2023/06/learnings-from-kctf-vrps-42-linux.html&#34;&gt;source&lt;/a&gt;). As with most newly introduced features, io_uring — since its introduction in 2019 — has been very bug-prone.&lt;/p&gt;&#xA;&lt;p&gt;CVE-2024-0582 is a page use-after-free discovered by &lt;a href=&#34;https://project-zero.issues.chromium.org/issues/42451653&#34;&gt;Jann Horn&lt;/a&gt; and later discussed in an Exodus Intel &lt;a href=&#34;https://blog.exodusintel.com/2024/03/27/mind-the-patch-gap-exploiting-an-io_uring-vulnerability-in-ubuntu/&#34;&gt;blog post&lt;/a&gt;. This post walks through the io_uring basics needed to understand the bug, then explores exploitation paths — from file-structure spraying to &lt;code&gt;sk_buff&lt;/code&gt;-based RIP hijacking.&lt;/p&gt;</description>
     </item>
   </channel>
