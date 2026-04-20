@@ -590,53 +590,13 @@ kick_gc();
 
 `close(skA)` drops its `file_count` to match `out_degree` — the dead-check precondition. The fast path runs, and because `sk-A`'s legitimate `scc_index=2` aliases the fresh-and-stale `scc_index=2` on the `sk-A→sk-C` edge's successor, `unix_vertex_dead(sk-A)` returns true and sk-A's receive queue is purged.
 
-#### Stage 4 — recover `sk-A` via sk-C and touch it
-
-Because `sk-A` is in `sk-C`'s receive queue (it carried itself via `send_fd(skA, skA, &cAddr, cLen)`), a `recvmsg()` on `skC` yields a new fd that still points at whatever the kernel thinks `sk-A` is after the purge:
-
-```c
-int uaf_fd = recv_fd(skC);
-write(uaf_fd, buf, 100);   /* touches (potentially freed) sk-A state */
-```
-
-**What this variant buys:** no listener, no embryo, no `accept()`, no `sk-X → sk-X`, and no DGRAM carrier for a stream-EISCONN workaround. One fewer graph-state transition to reason about, and the `scc_index` aliasing falls out of the simpler two-socket SCC directly.
-
-**The trade-off:** both `sk-A` and `sk-B` are inflight and user-held simultaneously at the moment the bug fires, so reasoning about exactly which vertex the fast path picks up first is slightly hairier. In practice the `sk-A → sk-C` edge is what the fast path walks into, and the aliasing holds.
-
-### Observable signature
-
-The embryo PoC plants a row of `pipe(2)` read-ends inside sk-A's receive queue *before* sk-A goes inflight. Pipes make excellent victims:
-
-- `pipe_inode_info` is not AF_UNIX, so `unix_get_socket()` returns NULL in `unix_add_edges()` — no `unix_vertex` kmalloc, freelist stays pristine.
-- Each planted pipe read-end has `file_count == 1` after we drop our user fd (the inflight ref in sk-A's queue is the only reference).
-- When the bad purge runs, every planted `pipe_read` is `fput()`'d to zero → pipe torn down → `write()` on the matching `pipe_write` returns `EPIPE`.
+![](/Qdiv7/images/gc_remastered/Screenshot-gc-4.png)
 
 On a vulnerable kernel with the printk patch from the annex added:
 
 ```
-[+] SCC DEAD Confirmed
-[=] pipe write results: 11 EPIPE / 0 OK (of 11 planted)
-[+] BUG TRIGGERED: sk-A's queue was purged while still live
+[+] SCC DEAD Confirmed : Right before returning 'true' in unix_vertex_dead()
 ```
-
-Every `EPIPE` is a pipe that got freed because the kernel wrongly declared sk-A dead. Every `sk gets destroyed` printk line inside `__unix_gc`'s purge window after `SCC DEAD Confirmed` is a `unix_sock` that the same bad verdict freed prematurely.
-
-### A word on KASAN reachability
-
-A natural question: does a KASAN-reportable use-after-free fall out of this primitive? The short answer is **no, not in single-process form**. The primitive produces a *logical* UAF — objects freed that still had legitimate producers — but the kernel's purge chain tears down graph state (edges, vertices) in lockstep with the frees via `unix_destruct_scm → unix_destroy_fpl → unix_del_edges → unix_free_vertices`. Nothing is left dangling for a subsequent dereference to catch.
-
-Why the single-process form cannot race its way to a splat either:
-
-- The bug precondition is `total_ref == out_degree`, which requires the inflight ref to be the *only* reference on sk-A. Keeping a user fd open on sk-A, or `dup()`'ing before closing, bumps `total_ref` past `out_degree` and the dead-check fails.
-- `unix_collect_skb()` holds `sk->sk_receive_queue->lock` across the splice. A racing `recvmsg()` on the same queue serialises — it sees either the pre-splice queue (full) or the post-splice queue (empty), never a torn-down middle state.
-- `fput()` is atomic. Cross-thread `fput` races do not produce dangling pointers.
-
-KASAN-visible exploitation of this bug class requires one of:
-
-1. A **non-fdtable kernel refholder** that survives the bad `fput` — `io_uring` fixed files, sockmap, BPF `sk_lookup`. The holder keeps a `struct file *` or `struct sock *` pointer alive through paths that do not go through the fdtable refcount, so when the bad purge drops `file_count` to 0 and frees the object, that pointer dangles. A subsequent op through the holding subsystem splats.
-2. A **second bug** widening the splice/purge window — some concurrent kernel path that reads `skb->sk` *after* splice but *before* `__skb_queue_purge` runs the destructor.
-
-Without one of those chained in, the reachable kernel-side evidence is the `SCC DEAD Confirmed` printk plus the destructor cascade, and the user-space-visible evidence is the `EPIPE` oracle (or a `write()` that quietly succeeds on a freed socket, in the `recv_fd(skC)` variant).
 
 ---
 
