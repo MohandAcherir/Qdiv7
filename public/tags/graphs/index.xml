@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Graphs on Qdiv7</title>
-    <link>https://mohandacherir.github.io/Qdiv7/tags/graphs/</link>
+    <link>http://localhost:1313/Qdiv7/tags/graphs/</link>
     <description>Recent content in Graphs on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Mon, 20 Apr 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/graphs/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="http://localhost:1313/Qdiv7/tags/graphs/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Unix GC Remastered</title>
-      <link>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</link>
+      <link>http://localhost:1313/Qdiv7/posts/unix_new_gc/</link>
       <pubDate>Sun, 19 Apr 2026 00:00:00 +0000</pubDate>
-      <guid>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</guid>
+      <guid>http://localhost:1313/Qdiv7/posts/unix_new_gc/</guid>
       <description>&lt;h2 id=&#34;introduction&#34;&gt;Introduction&lt;/h2&gt;&#xA;&lt;p&gt;The AF_UNIX garbage collector is a small but fascinating corner of the kernel. It exists because a socket can be made unreachable from user-space while still being kept alive by the kernel, through the &lt;code&gt;SCM_RIGHTS&lt;/code&gt; ancillary-data mechanism. In 2024 the subsystem was rewritten from scratch on top of a graph/SCC model; in 2025 an uninitialised-field bug in that rewrite was turned into a kCTF entry as &lt;strong&gt;CVE-2025-40214&lt;/strong&gt;.&lt;/p&gt;&#xA;&lt;p&gt;This post walks the rewrite end-to-end, reaches the bug, and then presents two reproducers — the canonical three-stage advisory variant (stream listener + embryo redirection) and a simpler four-socket variant I put together while building the PoC.&lt;/p&gt;</description>
     </item>
   </channel>

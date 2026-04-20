@@ -125,6 +125,8 @@ There are **two** triggers:
 
 The pre-2024 collector is well described in the [Google P0 post "The quantum state of Linux kernel garbage collection"](https://projectzero.google/2022/08/the-quantum-state-of-linux-kernel.html), which covers both the algorithm and a 2021 Android in-the-wild exploit. That post is the recommended companion read; here is just the one-line summary: the old GC walked the inflight graph, marked cycles, and checked `inflight != refcount` to decide whether each cycle was collectable.
 
+
+Here's a nice mermaid diagram:
 ![](/Qdiv7/images/gc_remastered/Screenshot-gc-1.png)
 
 ---
@@ -341,6 +343,10 @@ static void unix_walk_scc_fast(struct sk_buff_head *hitlist)
 ```
 
 The fast path walks each cached SCC in reverse order (**[5]**), moves each vertex to the visited list (**[6]**), and runs `unix_vertex_dead()` on it (**[7]**). If every vertex in the SCC passes the check, the whole SCC is appended to the hit-list for purge.
+
+
+![](/Qdiv7/images/gc_remastered/mermaid.png)
+
 
 ---
 
