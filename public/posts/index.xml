@@ -2,66 +2,66 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Posts on Qdiv7</title>
-    <link>http://localhost:1313/Qdiv7/posts/</link>
+    <link>https://mohandacherir.github.io/Qdiv7/posts/</link>
     <description>Recent content in Posts on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Mon, 20 Apr 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/Qdiv7/posts/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/posts/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Unix GC Remastered</title>
-      <link>http://localhost:1313/Qdiv7/posts/unix_new_gc/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</link>
       <pubDate>Sun, 19 Apr 2026 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/unix_new_gc/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</guid>
       <description>&lt;h2 id=&#34;introduction&#34;&gt;Introduction&lt;/h2&gt;&#xA;&lt;p&gt;The AF_UNIX garbage collector is a small but fascinating corner of the kernel. It exists because a socket can be made unreachable from user-space while still being kept alive by the kernel, through the &lt;code&gt;SCM_RIGHTS&lt;/code&gt; ancillary-data mechanism. In 2024 the subsystem was rewritten from scratch on top of a graph/SCC model; in 2025 an uninitialised-field bug in that rewrite was turned into a kCTF entry as &lt;strong&gt;CVE-2025-40214&lt;/strong&gt;.&lt;/p&gt;&#xA;&lt;p&gt;This post walks the rewrite end-to-end, reaches the bug, and then presents two reproducers — the canonical three-stage advisory variant (stream listener + embryo redirection) and a simpler four-socket variant I put together while building the PoC.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Yet Another Exploit for CVE-2024-0582</title>
-      <link>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</link>
       <pubDate>Wed, 18 Mar 2026 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
       <description>&lt;h2 id=&#34;introduction&#34;&gt;Introduction&lt;/h2&gt;&#xA;&lt;p&gt;&lt;strong&gt;io_uring&lt;/strong&gt; has been a heavily targeted subsystem in the Linux kernel — at one point it constituted 60% of kCTF entries (&lt;a href=&#34;https://security.googleblog.com/2023/06/learnings-from-kctf-vrps-42-linux.html&#34;&gt;source&lt;/a&gt;). As with most newly introduced features, io_uring — since its introduction in 2019 — has been very bug-prone.&lt;/p&gt;&#xA;&lt;p&gt;CVE-2024-0582 is a page use-after-free discovered by &lt;a href=&#34;https://project-zero.issues.chromium.org/issues/42451653&#34;&gt;Jann Horn&lt;/a&gt; and later discussed in an Exodus Intel &lt;a href=&#34;https://blog.exodusintel.com/2024/03/27/mind-the-patch-gap-exploiting-an-io_uring-vulnerability-in-ubuntu/&#34;&gt;blog post&lt;/a&gt;. This post walks through the io_uring basics needed to understand the bug, then explores exploitation paths — from file-structure spraying to &lt;code&gt;sk_buff&lt;/code&gt;-based RIP hijacking.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Notes On RCU</title>
-      <link>http://localhost:1313/Qdiv7/posts/notes_on_rcu/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</link>
       <pubDate>Mon, 09 Mar 2026 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/notes_on_rcu/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</guid>
       <description>&lt;p&gt;RCU is a mechanism in the Linux kernel for concurrency that is lock-free, wait-free (for readers) and that allows concurrent readers and a single updater.&#xA;RCU is made up of three fundamental mechanisms, one for &lt;strong&gt;insertion&lt;/strong&gt;, the other for &lt;strong&gt;deletion&lt;/strong&gt;, and the third being used to allow readers to tolerate &lt;strong&gt;concurrent insertions and deletions&lt;/strong&gt;. These mechanisms are described in the following sections, which focus on applying RCU to linked lists.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Notes on io_uring bugs &amp; exploitation</title>
-      <link>http://localhost:1313/Qdiv7/posts/io_uring_exploitation/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</link>
       <pubDate>Tue, 20 Jan 2026 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/io_uring_exploitation/</guid>
-      <description>&lt;p&gt;In this blog post, i go through the definitions and basics of io_uring subsystem, and then i talk about bugs and their exploits. &lt;br&gt;&#xA;&lt;strong&gt;io_uring&lt;/strong&gt; has been a very targeted subsystem in the linux kernel, to a point where it constituted 60% of kCTF entries; and as most newly introduced features, io_uring - since its introduction in 2019 - has been very bug-prone.&lt;/p&gt;&#xA;&lt;h2 id=&#34;introduction&#34;&gt;Introduction:&lt;/h2&gt;&#xA;&lt;p&gt;&lt;strong&gt;io_uring&lt;/strong&gt; is an API for asynchronous I/O operations.&#xA;Rather than using the traditional syscalls(read, write&amp;hellip;etc), io_uring allows through its API to make zero-copy operations with minimal overhead to communicate with the kernel&#xA;and make the same operations that these syscalls would do. It uses shared buffers between userspace and kernel as a mean for communication and tranferring data.&lt;/p&gt;</description>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</guid>
+      <description>&lt;h2 id=&#34;introduction&#34;&gt;Introduction&lt;/h2&gt;&#xA;&lt;p&gt;&lt;code&gt;io_uring&lt;/code&gt; is one of the most ambitious kernel interfaces added in recent years: a shared-memory asynchronous I/O engine designed to avoid the syscall-heavy overhead of traditional &lt;code&gt;read&lt;/code&gt;, &lt;code&gt;write&lt;/code&gt;, and networking paths. That performance-oriented design also makes it unusually interesting from a security perspective, because the subsystem is full of long-lived shared state, lifetime-sensitive objects, and fast paths that interact closely with core kernel memory-management code.&lt;/p&gt;&#xA;&lt;p&gt;This post first rebuilds the basic mental model for how &lt;code&gt;io_uring&lt;/code&gt; works, then walks through two bugs that capture the kinds of exploitation surfaces the subsystem keeps exposing: a relative free in the classic provided-buffer path, and a mapped-page use-after-free in the newer buffer-ring registration path.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Notes on refcounting and Unix Garbage Collector in the Linux Kernel</title>
-      <link>http://localhost:1313/Qdiv7/posts/refcounting-linux-kernel/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</link>
       <pubDate>Tue, 23 Dec 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/refcounting-linux-kernel/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</guid>
       <description>&lt;p&gt;As a means of studying and getting to know more about the linux kernel, especially exploitation(LPE &amp;amp; RCE), i tried to make notes and go as far as i can in reviewing the &lt;strong&gt;unix garbage&lt;/strong&gt;, or &lt;strong&gt;GC&lt;/strong&gt;, collector, the &lt;strong&gt;io_uring&lt;/strong&gt; subsystem, and some CVEs that showcase all of these. I am currently working on an N-day LPE for CVE-2022-2602 LPE to make it work with &lt;strong&gt;FUSE&lt;/strong&gt; technique.&lt;/p&gt;&#xA;&lt;p&gt;To kick off this article, i will explain the basics of &lt;strong&gt;file structures&lt;/strong&gt;, &lt;strong&gt;sockets&lt;/strong&gt;&amp;hellip;etc in the kernel, and then move onto to the unix GC and io_uring, and i&amp;rsquo;ll wrap with the CVEs.&lt;/p&gt;</description>
     </item>
     <item>
       <title>Notes on Linux Internals: The Slab Allocator</title>
-      <link>http://localhost:1313/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</link>
       <pubDate>Sat, 06 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</guid>
       <description>&lt;h1 id=&#34;linux-slub-allocator&#34;&gt;Linux SLUB allocator&lt;/h1&gt;&#xA;&lt;p&gt;The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems etc. It needs to ensure that it efficiently serves these requests under the specified constraints (if any) and to do so it relies on different types of memory allocators. Each allocator has its own interface and underlying implementation. The three main memory allocators used by the kernel are:&lt;/p&gt;</description>
     </item>
     <item>
       <title>Faulted RSA Signature</title>
-      <link>http://localhost:1313/Qdiv7/posts/faulted-rsa-signature/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/faulted-rsa-signature/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</guid>
       <description>&lt;h1 id=&#34;faulted-rsa-signature-attack&#34;&gt;Faulted RSA signature attack&lt;/h1&gt;&#xA;&lt;p&gt;Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture&#xA;32 bits&amp;rdquo;.&lt;br&gt;&#xA;Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce&#xA;service est susceptible à des erreurs dans le processus d’exponentiation.&lt;br&gt;&#xA;Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&amp;rsquo;on ne&#xA;connait pas.&lt;/p&gt;</description>
     </item>
     <item>
       <title>HTB Permx</title>
-      <link>http://localhost:1313/Qdiv7/posts/htb-permx/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/htb-permx/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/htb-permx/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/htb-permx/</guid>
       <description>&lt;h1 id=&#34;permx-walkthrough&#34;&gt;Permx walkthrough&lt;/h1&gt;&#xA;&lt;p&gt;&lt;strong&gt;OS&lt;/strong&gt;: Linux, &lt;strong&gt;Difficulty&lt;/strong&gt;: Easy&lt;/p&gt;&#xA;&lt;h2 id=&#34;enumeration&#34;&gt;Enumeration&lt;/h2&gt;&#xA;&lt;p&gt;Ports scan: &lt;code&gt;nmap -p- -sCV 10.10.11.23&lt;/code&gt;&lt;/p&gt;&#xA;&lt;pre tabindex=&#34;0&#34;&gt;&lt;code&gt;PORT   STATE SERVICE VERSION&#xA;22/tcp open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.10 (Ubuntu Linux; protocol 2.0)&#xA;| ssh-hostkey: &#xA;|   256 e2:5c:5d:8c:47:3e:d8:72:f7:b4:80:03:49:86:6d:ef (ECDSA)&#xA;|_  256 1f:41:02:8e:6b:17:18:9c:a0:ac:54:23:e9:71:30:17 (ED25519)&#xA;80/tcp open  http    Apache httpd 2.4.52&#xA;|_http-title: Did not follow redirect to fer&#xA;|_http-server-header: Apache/2.4.52 (Ubuntu)&#xA;Service Info: Host: 127.0.1.1; OS: Linux; CPE: cpe:/o:linux:linux_kernel&#xA;&lt;/code&gt;&lt;/pre&gt;&lt;p&gt;There&amp;rsquo;s no available exploit for this version of Openssh, and passwordless connexions are not possible.&lt;br&gt;&#xA;The http server redirects to &lt;code&gt;permx.htb/&lt;/code&gt;, so i added &lt;code&gt;10.10.11.23 permx.htb&lt;/code&gt; to &lt;code&gt;/etc/hosts&lt;/code&gt;: &lt;code&gt; echo &amp;quot;10.10.11.23 permx.htb&amp;quot; | sudo tee -a /etc/hosts&amp;quot;&lt;/code&gt;.&lt;/p&gt;</description>
     </item>
   </channel>
