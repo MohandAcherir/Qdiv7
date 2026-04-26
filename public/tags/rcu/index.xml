@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>RCU on Qdiv7</title>
-    <link>http://localhost:1313/Qdiv7/tags/rcu/</link>
+    <link>https://mohandacherir.github.io/Qdiv7/tags/rcu/</link>
     <description>Recent content in RCU on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Mon, 09 Mar 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/Qdiv7/tags/rcu/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/rcu/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Notes On RCU</title>
-      <link>http://localhost:1313/Qdiv7/posts/notes_on_rcu/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</link>
       <pubDate>Mon, 09 Mar 2026 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/notes_on_rcu/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</guid>
       <description>&lt;p&gt;RCU is a mechanism in the Linux kernel for concurrency that is lock-free, wait-free (for readers) and that allows concurrent readers and a single updater.&#xA;RCU is made up of three fundamental mechanisms, one for &lt;strong&gt;insertion&lt;/strong&gt;, the other for &lt;strong&gt;deletion&lt;/strong&gt;, and the third being used to allow readers to tolerate &lt;strong&gt;concurrent insertions and deletions&lt;/strong&gt;. These mechanisms are described in the following sections, which focus on applying RCU to linked lists.&lt;/p&gt;</description>
     </item>
   </channel>

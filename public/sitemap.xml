@@ -2,81 +2,81 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>http://localhost:1313/Qdiv7/tags/exploitation/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/exploitation/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/graphs/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/graphs/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/kernel/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/kernel/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/unix_new_gc/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/io_uring/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/cve-2026-31419/</loc>
+    <lastmod>2026-04-15T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/exploit/</loc>
+    <lastmod>2026-04-20T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/linux/</loc>
+    <lastmod>2026-04-15T00:00:00+00:00</lastmod>
+  </url><url>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</loc>
     <lastmod>2026-03-18T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/io_uring/</loc>
     <lastmod>2026-03-18T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/notes_on_rcu/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/notes_on_rcu/</loc>
     <lastmod>2026-03-09T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/rcu/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/rcu/</loc>
     <lastmod>2026-03-09T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/exploit/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/io_uring_exploitation/</loc>
     <lastmod>2026-04-20T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/io_uring_exploitation/</loc>
-    <lastmod>2026-04-20T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/linux/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/memory/</loc>
     <lastmod>2025-12-23T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/memory/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</loc>
     <lastmod>2025-12-23T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/refcounting-linux-kernel/</loc>
-    <lastmod>2025-12-23T00:00:00+00:00</lastmod>
-  </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</loc>
     <lastmod>2025-09-06T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/about/</loc>
-    <lastmod>2024-12-16T19:03:46-05:00</lastmod>
-  </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/cryptanalysis/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/cryptanalysis/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/crypto/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/crypto/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/easy/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/easy/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/faulted-rsa-signature/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/htb/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/htb/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/posts/htb-permx/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/posts/htb-permx/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/tags/rsa/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/tags/rsa/</loc>
     <lastmod>2024-12-15T00:00:00+00:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/Qdiv7/categories/</loc>
+    <loc>https://mohandacherir.github.io/Qdiv7/categories/</loc>
   </url>
 </urlset>

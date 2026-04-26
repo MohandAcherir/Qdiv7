@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Crypto on Qdiv7</title>
-    <link>http://localhost:1313/Qdiv7/tags/crypto/</link>
+    <link>https://mohandacherir.github.io/Qdiv7/tags/crypto/</link>
     <description>Recent content in Crypto on Qdiv7</description>
     <generator>Hugo</generator>
     <language>en</language>
     <lastBuildDate>Sun, 15 Dec 2024 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/Qdiv7/tags/crypto/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/crypto/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Faulted RSA Signature</title>
-      <link>http://localhost:1313/Qdiv7/posts/faulted-rsa-signature/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</link>
       <pubDate>Sun, 15 Dec 2024 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/faulted-rsa-signature/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/faulted-rsa-signature/</guid>
       <description>&lt;h1 id=&#34;faulted-rsa-signature-attack&#34;&gt;Faulted RSA signature attack&lt;/h1&gt;&#xA;&lt;p&gt;Le challenge commence par &amp;ldquo;Nous savons que les signatures ont été générées par un service en Go 1.5.1 sur une architecture&#xA;32 bits&amp;rdquo;.&lt;br&gt;&#xA;Après avoir médité sur cette ligne, quelques recherches sur la version 1.5.1 de Go ont révélé que ce&#xA;service est susceptible à des erreurs dans le processus d’exponentiation.&lt;br&gt;&#xA;Ensuite, il nous est donné dix signatures, une clé publique RSA et un message chiffré avec la clé privée correspondante qu&amp;rsquo;on ne&#xA;connait pas.&lt;/p&gt;</description>
     </item>
   </channel>
