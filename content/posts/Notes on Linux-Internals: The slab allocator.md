@@ -1,61 +1,63 @@
-+++
-title = 'Notes on Linux Internals: The Slab Allocator'
-date = 2025-09-06
-tags = ['Linux','Memory','Kernel']
-type = 'post'
-+++
+---
+date: 2025-09-06
+lastmod: 2026-03-20
+description: "Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path."
+showTableOfContents: true
+tags: ["linux", "memory", "kernel"]
+title: "Notes on Linux Internals: The Slab Allocator"
+type: "post"
+---
 
+## Introduction
 
-# Linux SLUB allocator
+This post is some of my early notes on the SLUB allocator.
 
-The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems etc. It needs to ensure that it efficiently serves these requests under the specified constraints (if any) and to do so it relies on different types of memory allocators. Each allocator has its own interface and underlying implementation. The three main memory allocators used by the kernel are:
-- Page allocator
-- Slab allocator
-- Vmalloc allocator
+The kernel heap allocator is an important component responsible for satisfying allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems, etc. These notes discuss only `kmalloc` and `kmem_cache_alloc*`, but there are three main memory allocators used by the kernel:
+- **Page allocator**: The underlying allocator for slabs too; it allocates pages of different orders 0, 1, etc.
+- **Slab allocator**: Allocates objects in the form of chunks; it can be thought of as the kernel version of the heap allocator.
+- **Vmalloc allocator**: Used for stacks allocation, as far as I know; like when forking, the kernel allocates the new process's stack with this.
 
-The Linux kernel organizes available physical memory into fixed-size pages (typically 4KB each), which are managed by the page allocator—the fundamental interface for obtaining physically contiguous memory in page-size multiples. When the kernel requires large blocks of virtually contiguous memory that can span non-adjacent physical pages, it utilizes the vmalloc interface instead.
-However, most kernel memory allocation requests are for objects (using `kmalloc`, `kmem_cache_alloc` ..etc) significantly smaller than a full page, such as process descriptors, file structures, or network buffers. Directly using the page allocator for these sub-page allocations would result in substantial memory waste and severe internal fragmentation, as each small object would consume an entire 4KB page. To address this inefficiency, the kernel employs slab allocators, which subdivide pages into appropriately-sized object slots, enabling efficient allocation of small, frequently-used kernel data structures while minimizing fragmentation and maximizing memory utilization.
+Even deeper, there's the Zone allocator (notes are in preparation).
 
-The Linux kernel has 3 flavors of slab allocators namely, SLAB, SLUB and SLOB allocators. The SLUB allocator is the default and most widely used slab allocator and this article will only cover the SLUB allocator.
+Concretely, `kmalloc` & `kmem_cache_alloc` allocate objects like: process descriptors, file structures, network buffers, sockets, etc.
+
+The Linux kernel has 3 flavors of slab allocators: SLAB, SLUB, and SLOB. The SLUB allocator is the default and most widely used, and I cover only SLUB.
+
 SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability.
 
 ![timeline](/Qdiv7/images/Linux-Internals-1/Screenshot-1.png)
 
+---
+
 ## Basic Concepts
 
+The idea of the slab allocator is based on object caching. The slab allocator uses a pre-allocated cache of objects. This cache is created by:
+- Reserving some page frames (allocated via the page allocator).
+- Dividing these page frames into objects and maintaining some metadata about them.
 
-The idea of the slab allocator is based on the idea of object cache. The slab allocator uses a pre-allocated cache of objects. This cache of objects is created by:
-- reserving some page frames (allocated via the page allocator).
-- dividing these page frames into objects and maintaining some metadata about the objects.
+That being said, a "cache" in this context has a more to it than just a simple reservoir for objects. So let's see the full picture:
 
-So, A cache is a collection of slabs and A slab is a collection of objects.
-Objects belonging to a cache are further grouped into slabs, which will be of a fixed size and contain a fixed number of objects. 
+> **Note:** I'm not covering the new sheaves thing for now.
 
-**Note**: “the SLAB allocator” vs “the slab” \
-**`The SLAB allocator`** is a design/paradigm of memory allocation, whereas the **`slab`** is a data structure.
-
-
-## Data Structures
-
-![object](/Qdiv7/images/Linux-Internals-1/Screenshot-3.png)
-
-### Slab cache: struct kmem_cache
-
-Here's the complete `kmem_cache` as written in [https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h](https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h) :
+The picture....Tadaaa:
 
 ```c
+// mm/slab.h - v6.15.9
+
 /*
  * Slab cache management.
  */
 struct kmem_cache {
+#ifndef CONFIG_SLUB_TINY
 	struct kmem_cache_cpu __percpu *cpu_slab;
+#endif
 	/* Used for retrieving partial slabs, etc. */
 	slab_flags_t flags;
 	unsigned long min_partial;
-	unsigned int size;	/* The size of an object including metadata */
-	unsigned int object_size;/* The size of an object without metadata */
+	unsigned int size;		/* Object size including metadata */
+	unsigned int object_size;	/* Object size without metadata */
 	struct reciprocal_value reciprocal_size;
-	unsigned int offset;	/* Free pointer offset */
+	unsigned int offset;		/* Free pointer offset */
 #ifdef CONFIG_SLUB_CPU_PARTIAL
 	/* Number of per cpu partial objects to keep around */
 	unsigned int cpu_partial;
@@ -66,16 +68,16 @@ struct kmem_cache {
 
 	/* Allocation and freeing of slabs */
 	struct kmem_cache_order_objects min;
-	gfp_t allocflags;	/* gfp flags to use on each alloc */
-	int refcount;		/* Refcount for slab cache destroy */
-	void (*ctor)(void *);
+	gfp_t allocflags;		/* gfp flags to use on each alloc */
+	int refcount;			/* Refcount for slab cache destroy */
+	void (*ctor)(void *object);	/* Object constructor */
 	unsigned int inuse;		/* Offset to metadata */
 	unsigned int align;		/* Alignment */
 	unsigned int red_left_pad;	/* Left redzone padding size */
-	const char *name;	/* Name (only for display!) */
-	struct list_head list;	/* List of slab caches */
+	const char *name;		/* Name (only for display!) */
+	struct list_head list;		/* List of slab caches */
 #ifdef CONFIG_SYSFS
-	struct kobject kobj;	/* For sysfs */
+	struct kobject kobj;		/* For sysfs */
 #endif
 #ifdef CONFIG_SLAB_FREELIST_HARDENED
 	unsigned long random;
@@ -92,158 +94,160 @@ struct kmem_cache {
 	unsigned int *random_seq;
 #endif
 
-#ifdef CONFIG_KASAN
+#ifdef CONFIG_KASAN_GENERIC
 	struct kasan_cache kasan_info;
 #endif
 
+#ifdef CONFIG_HARDENED_USERCOPY
 	unsigned int useroffset;	/* Usercopy region offset */
 	unsigned int usersize;		/* Usercopy region size */
+#endif
 
 	struct kmem_cache_node *node[MAX_NUMNODES];
 };
+
 ```
 
+There are many members and each one has its function. Here are the most basic ones:
+- **`name`**: The name of the cache. There are many caches, each with its own name like: `kmalloc-128`, `cred_jar`, custom ones, etc.
+- **`object_size`**: The size of objects in the cache.
+- **`list`**: A doubly linked list of all the slab caches.
 
 
-### Analysis:
+![timeline](/Qdiv7/images/Linux-Internals-1/Screenshot-2_2.png)
 
-- `name`: is name for the cache.
-- `size`, `object_size` and `offset` are illustrated with this image:
+---
 
-![object](/Qdiv7/images/Linux-Internals-1/Screenshot-2.png)
-- `oo` : number of objects per slab 
-- `flags` holds the flags that can be set when creating a kmem_cache object.
-- `list` is a linked list of all the slab caches.
-- `cpu_slab` is a per-CPU pointer to a `kmem_cache_cpu` structure that enables lockless, fast-path allocation for each CPU core:
-        - Each CPU core gets its own copy of the `kmem_cache_cpu` structure.
-        - No locking needed since each CPU works on its own copy.
+## Per-CPU Slab
 
-Here's its structure: 
+Now that we have a sense of what a cache is, the question is: how does object allocation work?
+
+Allocations done through `kmalloc` or `kmem_cache_alloc*` pick available chunks from the cache, but where exactly?
+
+The answer is `struct kmem_cache_cpu __percpu *cpu_slab;` — a per-CPU object, meaning that each CPU core has its own state to pick from.
+
+> **Note:** If we pin thread A to CPU 0 and thread B to CPU 1 simultaneously, the first allocates from the slabs cached in CPU 0 and the second from slabs cached in CPU 1.
+
 ```c
 struct kmem_cache_cpu {
-	void **freelist;	/* Pointer to next available object */
-	unsigned long tid;	/* Globally unique transaction id */
+	union {
+		struct {
+			void **freelist;	/* Pointer to next available object */
+			unsigned long tid;	/* Globally unique transaction id */
+		};
+		freelist_aba_t freelist_tid;
+	};
 	struct slab *slab;	/* The slab from which we are allocating */
 #ifdef CONFIG_SLUB_CPU_PARTIAL
-	struct slab *partial;	/* Partially allocated frozen slabs */
+	struct slab *partial;	/* Partially allocated slabs */
 #endif
 	local_lock_t lock;	/* Protects the fields above */
 #ifdef CONFIG_SLUB_STATS
-	unsigned stat[NR_SLUB_STAT_ITEMS];
+	unsigned int stat[NR_SLUB_STAT_ITEMS];
 #endif
 };
 ```
 
-**Note** : We should note that both `kmem_cache_cpu.freelist` and `kmem_cache_cpu.slab.freelist` are pointing to objects on the active slab and these are two different lists albeit consisting of objects from the same slab.
+- **`freelist`**: The fast path (lockless). It points to freed chunks in the **active** slab.
+- **`slab`**: Points to what we call the active slab — the set of pages that contain freed chunks.
 
-Here's the structure of the slab:
+The freelist is the fastest path: if it's pointing to a freed object, an allocation returns it. Otherwise, it falls through to `slab`, the active slab.
+
+A slab is one or more compound pages that are split into objects:
+
+
+![timeline](/Qdiv7/images/Linux-Internals-1/Screenshot-3_2.png)
+
+
+The paging is expressed in terms of **order**: if a slab has only 1 page, we say it has order 0, and so on.
+
+---
+
+## The `struct slab`
+
+> **Note:** "the SLAB allocator" vs "the slab" —
+**`The SLAB allocator`** is a design/paradigm of memory allocation, whereas **`the slab`** is a data structure.
+
 ```c
+/* Reuses the bits in struct page */
 struct slab {
 	unsigned long __page_flags;
 
+	struct kmem_cache *slab_cache; // [1]
 	union {
-		struct list_head slab_list;
-		struct rcu_head rcu_head;
+		struct {
+			union {
+				struct list_head slab_list; // [2]
 #ifdef CONFIG_SLUB_CPU_PARTIAL
-		struct {
-			struct slab *next;
-			int slabs;	/* Nr of slabs left */
-		};
+				struct {
+					struct slab *next; // [2.5]
+					int slabs;	/* Nr of slabs left */
+				};
 #endif
+			};
+			/* Double-word boundary */
+			union {
+				struct {
+					void *freelist;	// [3]	/* first free object */
+					union {
+						unsigned long counters;
+						struct {
+							unsigned inuse:16;
+							unsigned objects:15;
+							/*
+							 * If slab debugging is enabled then the
+							 * frozen bit can be reused to indicate
+							 * that the slab was corrupted
+							 */
+							unsigned frozen:1;
+						};
+					};
+				};
 	};
-	struct kmem_cache *slab_cache;
-	/* Double-word boundary */
-	void *freelist;		/* first free object */
-	union {
-		unsigned long counters;
-		struct {
-			unsigned inuse:16;
-			unsigned objects:15;
-			unsigned frozen:1;
-		};
-	};
-	unsigned int __unused;
-
-	atomic_t __page_refcount;
-#ifdef CONFIG_MEMCG
-	unsigned long memcg_data;
+	// [...]
 #endif
 };
 ```
 
-**Note**: Before the 5.17 Kernel, a slab's metadata was accessed directly via a union in the `struct page`.
+As dense as this structure looks, only a few details are relevant:
+- **[1]** is a pointer to the cache the slab belongs to.
+- **[2]** & **[2.5]**: the slab has a next pointer/list so the allocator can walk through the slabs.
+- **[3]** is the pointer to the second freelist, i.e. the 2nd fastest path.
 
-- `slab_cache` is a pointer to the `kmem_cache` struct the slab belongs to.
-- `freelist` is a pointer to the first free object in this slab as we saw earlier.
-- `inuse:16` is the number of objects currently allocated.
-- `frozen`: mean that the slab is being actively modified by one CPU and should not be accessed by other CPUs
+It should be noted that the lockless freelist and active slab freelist do not intersect, although they live in the same slab. Another thing is that the lockless freelist serves as a bridge between cores for objects to move around.
 
-A slab can consist of one or more pages and this does not depend on the object size i.e.  a slab can consist of multiple pages even if its objects are smaller than a page. The number of pages in a slab depends on `kmem_cache.oo`.
+---
 
+## Partial Lists and Full Slabs
 
-![object](/Qdiv7/images/Linux-Internals-1/Screenshot-4.png)
+### What happens when you free from a full slab?
 
+A slab is full when all its elements are allocated; in that case, it becomes untracked by the cache (except in some debug configs). However, when an element of it is freed, the whole slab that the freed object belongs to is placed into a **partial** list. So every non-full slab that is not the active slab is placed into some partial list — either the per-CPU one, or the node one.
 
-Last by not least, we have the `kmem_cache_node` structure:
+![timeline](/Qdiv7/images/Linux-Internals-1/Screenshot-4_2.png)
 
-```c
-struct kmem_cache_node {
-	spinlock_t list_lock;
-
-	unsigned long nr_partial;
-	struct list_head partial;
-#ifdef CONFIG_SLUB_DEBUG
-	atomic_long_t nr_slabs;
-	atomic_long_t total_objects;
-	struct list_head full;
-#endif
-};
+Note that the per-CPU list has limits; to verify:
+```shell
+cat /sys/kernel/slab/<cache_name>/cpu_partial
 ```
+This corresponds to the `cpu_partial_slabs` member in the cache structure.
 
-- `partial` is a circular doubly-linked list of all partially filled slabs available for allocation.
-- `nr_partial` is the  number of partial slabs.
-- `kmem_cache->min_partial` is the minimum number of partial slabs to retain even when they're empty.
+If the per-CPU list hits this limit:
+1. It purges completely free slabs back into the page allocator — this behaviour is exploited in Cross-Cache attacks.
+2. It moves the others into the per-node partial list.
 
-
-## Allocating a slub object
-
-Allocation always happens from the **active slab** and both per-cpu's `freelist` and per-cpu's `slab.freelist` point to a free object on the active slab.
-
-There are 2 allocation paths for objects: **Fastpath** and **Slowpath**.
-
-### Fastpath:
-
-- allocation happens when per-cpu lockless `freelist` (`kmem_cache.cpu_slab->freelist`) contains free objects. This is the simplest allocation path and it does not involve any locking or irq/preemption disabling. The object at the front of this freelist is returned as an allocated object and next available object in the `freelist` becomes the head of the list. If allocation ends up consuming all objects in the lockless `freelist`, then this list becomes `NULL` and will get objects when allocation is next attempted. As mentioned earlier if the CPU does not support **cmpxchg for 2 words** or if slub debugging (slub_debug) is enabled, **`Fastpath` is not used**.
-
-Scenario:
-When a slab becomes the active slab for a CPU, its freelist is transferred to the CPU's lockless freelist (kmem_cache_cpu->freelist) and the slab's own freelist is cleared and marked as frozen. Objects are then allocated directly from this per-CPU freelist without any locking. When objects are freed, the behavior depends on which CPU performs the free operation: if freed by the same CPU that allocated them, they're added to the head of that CPU's freelist for immediate reuse. However, if freed by a different CPU, they're atomically added to the frozen slab's freelist using compare-and-swap operations for thread safety, since the slab remains "owned" by the original CPU. This asymmetric free behavior can lead to a situation where a CPU's per-CPU freelist becomes empty (after allocating all objects) while the slab's freelist accumulates objects (from cross-CPU frees). When the CPU needs more objects and finds its freelist empty, the slow path will check the slab's freelist and transfer any available objects back to the per-CPU freelist before falling back to partial slabs or allocating new slabs entirely. This design optimizes for the common case of same-CPU allocation/free cycles while handling cross-CPU frees safely through atomic operations on the slab's freelist.
-
-### SLOWPATH 1:
-- If the per-cpu lockless `freelist` does not contain free objects but the `slab.freelist` of the active slab does contain free objects then the first object of the slab’s freelist is returned as an allocated object and the **rest of the active slab’s freelist is transferred to that CPU’s lockless freelist and the active slab’s freelist becomes NULL**. This path involves disabling preemption and acquiring `kmem_cache_cpu.lock` so it is slower than `Fastpath` allocation but is still faster than other allocation paths. Explicit disabling of preemption is needed for CONFIG_PREEMPT_RT kernels.
+These slabs go back and forth between the active slab and the partial lists as objects are allocated and freed.
 
 
-### SLOWPATH 2:
-In allocation paths discussed so far a CPU’s active slab had some free objects but it may happen that there are no more free objects in the active slab but the per-cpu partial slab list has slabs with free objects (assuming support of partial slab list is enabled). In this case the first slab in the per-cpu partial slab list becomes the active slab, its freelist is transferred to the CPU’s lockless freelist and objects get allocated from that freelist. This path also only involves disabling preemption and acquiring kmem_cache_cpu.lock but has additional overhead compared to the previous path. This additional overhead comes from the fact that in this case we need to make the first slab in per-cpu partial slab list, the current active slab and the second slab (if any) in the per-cpu partial slab list becomes head of this list.
+![timeline](/Qdiv7/images/Linux-Internals-1/Screenshot-5_2.png)
 
+---
 
-If per-cpu slabs (active and partial) do not have free objects, then allocation is attempted from slabs from the per-node partial slab list. How does the per-node partial slab list get its slabs ? Slabs are never explicitly allocated for the per-node partial slab list. When a full slab becomes empty or partial, we try to put it into the per-cpu partial slab list first and if that is not possible (either because the per-cpu partial slab list is not supported or because it has the maximum allowed number of objects), the slab is put into the per-node partial slab list. This is how the per-node partial slab list gets its slabs.
+## Conclusion
 
-### SLOWPATH 3:
-Now when neither of the per CPU active or partial slabs have free objects, slub allocator tries to get slabs from the partial slab list of local node but if it can’t find slabs in that node’s partial slab list, then it tries to get partial slabs from the per-node partial slab list corresponding to other nodes. The nodes nearer to CPU are tried first. The traversal of a node’s partial slab list involves acquiring kmem_cache_node.list_lock and since this is a central lock, the involved overhead is much more than acquiring kmem_cache_cpu.lock needed in previously described cases. While looking for a slab, slub allocator iterates through the per-node partial slab list and for the first found slab, it notes the first free object and this object will be returned as an allocated object and the rest of this slab becomes the per-cpu active slab.
+These are introductory notes. I'll dive deeper into more interesting things like Cross-Cache and Cross-CPU attacks; the new sheaves mechanism needs to be understood too.
 
-
-If the per-cpu partial slab list is supported then slub allocator continues even after getting a usable slab and making it the active slab. It moves slabs from the per-node partial slab list to the per-cpu partial slab list and continues doing so until all slabs in the per-node partial slab list have been moved or the limit of maximum number of slabs that can be kept in a per-cpu partial slab list has been reached. The maximum number of slabs that can exist in the per-cpu partial slab list depends on object size. slub allocator tries to keep a certain number of objects available in the per-cpu partial slab list. Based on this number of objects and assuming that each slab will be half full, slub allocator decides how many slabs can reside in the per-cpu partial slab list. The number of objects in the per-cpu partial slab list, depends on the object size and can be 6, 24, 52 or 120. For larger objects, the number of objects that the slub allocator tries to maintain in the per-cpu partial slab list is smaller. For example for objects of size >= PAGE_SIZE this number is 6 and for objects of size < 256 this number is 120.
-
-### Very SLOWPATH:
-Lastly if all of the slabs of a slab cache are full, a new slab gets allocated using page allocator and this newly allocated slab becomes the CPU’s current active slab. Amongst all the slow allocation paths this is the slowest one because it involves getting new pages from the **buddy allocator**.
-
-![object](/Qdiv7/images/Linux-Internals-1/Screenshot-5.png)
-
-
-## Freeing a slub object
-TO BE CONTINUED
-
-
+---
 
 ## References
 
@@ -251,4 +255,3 @@ TO BE CONTINUED
 [https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf](https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf)\
 [https://sam4k.com/linternals-memory-allocators-0x02/](https://sam4k.com/linternals-memory-allocators-0x02/)\
 [https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf](https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf)
-

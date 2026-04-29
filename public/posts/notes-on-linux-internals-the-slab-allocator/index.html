@@ -18,19 +18,19 @@
 
     
     <title>Notes on Linux Internals: The Slab Allocator</title>
-    <meta name="description" content="Linux SLUB allocator The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation …">
-    <meta name="keywords" content='Linux, Memory, Kernel'>
+    <meta name="description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.">
+    <meta name="keywords" content='linux, memory, kernel'>
 
     <meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
     <meta property="og:type" content="website">
     <meta property="og:title" content="Notes on Linux Internals: The Slab Allocator">
-    <meta property="og:description" content="Linux SLUB allocator The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation …">
+    <meta property="og:description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.">
     <meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
     <meta property="og:image:secure_url" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
 
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="Notes on Linux Internals: The Slab Allocator">
-    <meta name="twitter:description" content="Linux SLUB allocator The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation …">
+    <meta name="twitter:description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.">
     <meta property="twitter:domain" content="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
     <meta property="twitter:url" content="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
     <meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
@@ -147,71 +147,74 @@
 	
 
 	
-          <small role="doc-subtitle"></small>
+          <small role="doc-subtitle">Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.</small>
 	
 
 	
           <p class="post-date">September 6, 2025
-           
+            | Updated March 20, 2026
           </p>
 	
 
         <ul class="post-tags">
           
            
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/linux">Linux</a></li>
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/linux">linux</a></li>
            
          
            
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/memory">Memory</a></li>
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/memory">memory</a></li>
            
          
            
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/kernel">Kernel</a></li>
+             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/kernel">kernel</a></li>
            
          
         </ul>
     </div>
 
     <div class="post-content">
-        <h1 id="linux-slub-allocator">Linux SLUB allocator</h1>
-<p>The Linux kernel is responsible for managing the available physical memory that it needs to satisfy memory allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems etc. It needs to ensure that it efficiently serves these requests under the specified constraints (if any) and to do so it relies on different types of memory allocators. Each allocator has its own interface and underlying implementation. The three main memory allocators used by the kernel are:</p>
+        <h2 id="introduction">Introduction</h2>
+<p>This post is some of my early notes on the SLUB allocator.</p>
+<p>The kernel heap allocator is an important component responsible for satisfying allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems, etc. These notes discuss only <code>kmalloc</code> and <code>kmem_cache_alloc*</code>, but there are three main memory allocators used by the kernel:</p>
 <ul>
-<li>Page allocator</li>
-<li>Slab allocator</li>
-<li>Vmalloc allocator</li>
+<li><strong>Page allocator</strong>: The underlying allocator for slabs too; it allocates pages of different orders 0, 1, etc.</li>
+<li><strong>Slab allocator</strong>: Allocates objects in the form of chunks; it can be thought of as the kernel version of the heap allocator.</li>
+<li><strong>Vmalloc allocator</strong>: Used for stacks allocation, as far as I know; like when forking, the kernel allocates the new process&rsquo;s stack with this.</li>
 </ul>
-<p>The Linux kernel organizes available physical memory into fixed-size pages (typically 4KB each), which are managed by the page allocator—the fundamental interface for obtaining physically contiguous memory in page-size multiples. When the kernel requires large blocks of virtually contiguous memory that can span non-adjacent physical pages, it utilizes the vmalloc interface instead.
-However, most kernel memory allocation requests are for objects (using <code>kmalloc</code>, <code>kmem_cache_alloc</code> ..etc) significantly smaller than a full page, such as process descriptors, file structures, or network buffers. Directly using the page allocator for these sub-page allocations would result in substantial memory waste and severe internal fragmentation, as each small object would consume an entire 4KB page. To address this inefficiency, the kernel employs slab allocators, which subdivide pages into appropriately-sized object slots, enabling efficient allocation of small, frequently-used kernel data structures while minimizing fragmentation and maximizing memory utilization.</p>
-<p>The Linux kernel has 3 flavors of slab allocators namely, SLAB, SLUB and SLOB allocators. The SLUB allocator is the default and most widely used slab allocator and this article will only cover the SLUB allocator.
-SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability.</p>
+<p>Even deeper, there&rsquo;s the Zone allocator (notes are in preparation).</p>
+<p>Concretely, <code>kmalloc</code> &amp; <code>kmem_cache_alloc</code> allocate objects like: process descriptors, file structures, network buffers, sockets, etc.</p>
+<p>The Linux kernel has 3 flavors of slab allocators: SLAB, SLUB, and SLOB. The SLUB allocator is the default and most widely used, and I cover only SLUB.</p>
+<p>SLUB (Simple List of Unused Blocks) is the default kernel memory allocator in Linux, designed as a simplified replacement for the original SLAB allocator. It maintains the performance characteristics of SLAB while providing better maintainability, reduced memory overhead, and improved scalability.</p>
 <p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-1.png" alt="timeline"></p>
+<hr>
 <h2 id="basic-concepts">Basic Concepts</h2>
-<p>The idea of the slab allocator is based on the idea of object cache. The slab allocator uses a pre-allocated cache of objects. This cache of objects is created by:</p>
+<p>The idea of the slab allocator is based on object caching. The slab allocator uses a pre-allocated cache of objects. This cache is created by:</p>
 <ul>
-<li>reserving some page frames (allocated via the page allocator).</li>
-<li>dividing these page frames into objects and maintaining some metadata about the objects.</li>
+<li>Reserving some page frames (allocated via the page allocator).</li>
+<li>Dividing these page frames into objects and maintaining some metadata about them.</li>
 </ul>
-<p>So, A cache is a collection of slabs and A slab is a collection of objects.
-Objects belonging to a cache are further grouped into slabs, which will be of a fixed size and contain a fixed number of objects.</p>
-<p><strong>Note</strong>: “the SLAB allocator” vs “the slab” <br>
-<strong><code>The SLAB allocator</code></strong> is a design/paradigm of memory allocation, whereas the <strong><code>slab</code></strong> is a data structure.</p>
-<h2 id="data-structures">Data Structures</h2>
-<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-3.png" alt="object"></p>
-<h3 id="slab-cache-struct-kmem_cache">Slab cache: struct kmem_cache</h3>
-<p>Here&rsquo;s the complete <code>kmem_cache</code> as written in <a href="https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h">https://elixir.bootlin.com/linux/v5.19.17/source/include/linux/slub_def.h</a> :</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/*
+<p>That being said, a &ldquo;cache&rdquo; in this context has a more to it than just a simple reservoir for objects. So let&rsquo;s see the full picture:</p>
+<blockquote>
+<p><strong>Note:</strong> I&rsquo;m not covering the new sheaves thing for now.</p>
+</blockquote>
+<p>The picture&hellip;.Tadaaa:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// mm/slab.h - v6.15.9
+</span></span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">/*
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Slab cache management.
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> kmem_cache {
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_cpu __percpu <span style="color:#f92672">*</span>cpu_slab;
-</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Used for retrieving partial slabs, etc. */</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifndef CONFIG_SLUB_TINY
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_cpu __percpu <span style="color:#f92672">*</span>cpu_slab;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Used for retrieving partial slabs, etc. */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">slab_flags_t</span> flags;
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> min_partial;
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> size;	<span style="color:#75715e">/* The size of an object including metadata */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> object_size;<span style="color:#75715e">/* The size of an object without metadata */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> size;		<span style="color:#75715e">/* Object size including metadata */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> object_size;	<span style="color:#75715e">/* Object size without metadata */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> reciprocal_value reciprocal_size;
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> offset;	<span style="color:#75715e">/* Free pointer offset */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> offset;		<span style="color:#75715e">/* Free pointer offset */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
 </span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Number of per cpu partial objects to keep around */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> cpu_partial;
@@ -222,16 +225,16 @@ Objects belonging to a cache are further grouped into slabs, which will be of a 
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Allocation and freeing of slabs */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_order_objects min;
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">gfp_t</span> allocflags;	<span style="color:#75715e">/* gfp flags to use on each alloc */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> refcount;		<span style="color:#75715e">/* Refcount for slab cache destroy */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>ctor)(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">gfp_t</span> allocflags;		<span style="color:#75715e">/* gfp flags to use on each alloc */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">int</span> refcount;			<span style="color:#75715e">/* Refcount for slab cache destroy */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">void</span> (<span style="color:#f92672">*</span>ctor)(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>object);	<span style="color:#75715e">/* Object constructor */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> inuse;		<span style="color:#75715e">/* Offset to metadata */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> align;		<span style="color:#75715e">/* Alignment */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> red_left_pad;	<span style="color:#75715e">/* Left redzone padding size */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name;	<span style="color:#75715e">/* Name (only for display!) */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> list_head list;	<span style="color:#75715e">/* List of slab caches */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name;		<span style="color:#75715e">/* Name (only for display!) */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> list_head list;		<span style="color:#75715e">/* List of slab caches */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SYSFS
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kobject kobj;	<span style="color:#75715e">/* For sysfs */</span>
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kobject kobj;		<span style="color:#75715e">/* For sysfs */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLAB_FREELIST_HARDENED
 </span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> random;
@@ -248,125 +251,127 @@ Objects belonging to a cache are further grouped into slabs, which will be of a 
 </span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> <span style="color:#f92672">*</span>random_seq;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
 </span></span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_KASAN
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_KASAN_GENERIC
 </span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kasan_cache kasan_info;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
 </span></span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> useroffset;	<span style="color:#75715e">/* Usercopy region offset */</span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_HARDENED_USERCOPY
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> useroffset;	<span style="color:#75715e">/* Usercopy region offset */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> usersize;		<span style="color:#75715e">/* Usercopy region size */</span>
-</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_node <span style="color:#f92672">*</span>node[MAX_NUMNODES];
 </span></span><span style="display:flex;"><span>};
-</span></span></code></pre></div><h3 id="analysis">Analysis:</h3>
+</span></span></code></pre></div><p>There are many members and each one has its function. Here are the most basic ones:</p>
 <ul>
-<li><code>name</code>: is name for the cache.</li>
-<li><code>size</code>, <code>object_size</code> and <code>offset</code> are illustrated with this image:</li>
+<li><strong><code>name</code></strong>: The name of the cache. There are many caches, each with its own name like: <code>kmalloc-128</code>, <code>cred_jar</code>, custom ones, etc.</li>
+<li><strong><code>object_size</code></strong>: The size of objects in the cache.</li>
+<li><strong><code>list</code></strong>: A doubly linked list of all the slab caches.</li>
 </ul>
-<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-2.png" alt="object"></p>
-<ul>
-<li><code>oo</code> : number of objects per slab</li>
-<li><code>flags</code> holds the flags that can be set when creating a kmem_cache object.</li>
-<li><code>list</code> is a linked list of all the slab caches.</li>
-<li><code>cpu_slab</code> is a per-CPU pointer to a <code>kmem_cache_cpu</code> structure that enables lockless, fast-path allocation for each CPU core:
-- Each CPU core gets its own copy of the <code>kmem_cache_cpu</code> structure.
-- No locking needed since each CPU works on its own copy.</li>
-</ul>
-<p>Here&rsquo;s its structure:</p>
+<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-2_2.png" alt="timeline"></p>
+<hr>
+<h2 id="per-cpu-slab">Per-CPU Slab</h2>
+<p>Now that we have a sense of what a cache is, the question is: how does object allocation work?</p>
+<p>Allocations done through <code>kmalloc</code> or <code>kmem_cache_alloc*</code> pick available chunks from the cache, but where exactly?</p>
+<p>The answer is <code>struct kmem_cache_cpu __percpu *cpu_slab;</code> — a per-CPU object, meaning that each CPU core has its own state to pick from.</p>
+<blockquote>
+<p><strong>Note:</strong> If we pin thread A to CPU 0 and thread B to CPU 1 simultaneously, the first allocates from the slabs cached in CPU 0 and the second from slabs cached in CPU 1.</p>
+</blockquote>
 <div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> kmem_cache_cpu {
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">void</span> <span style="color:#f92672">**</span>freelist;	<span style="color:#75715e">/* Pointer to next available object */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> tid;	<span style="color:#75715e">/* Globally unique transaction id */</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">union</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">void</span> <span style="color:#f92672">**</span>freelist;	<span style="color:#75715e">/* Pointer to next available object */</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> tid;	<span style="color:#75715e">/* Globally unique transaction id */</span>
+</span></span><span style="display:flex;"><span>		};
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">freelist_aba_t</span> freelist_tid;
+</span></span><span style="display:flex;"><span>	};
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>slab;	<span style="color:#75715e">/* The slab from which we are allocating */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>partial;	<span style="color:#75715e">/* Partially allocated frozen slabs */</span>
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>partial;	<span style="color:#75715e">/* Partially allocated slabs */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
 </span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">local_lock_t</span> lock;	<span style="color:#75715e">/* Protects the fields above */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_STATS
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> stat[NR_SLUB_STAT_ITEMS];
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>};
-</span></span></code></pre></div><p><strong>Note</strong> : We should note that both <code>kmem_cache_cpu.freelist</code> and <code>kmem_cache_cpu.slab.freelist</code> are pointing to objects on the active slab and these are two different lists albeit consisting of objects from the same slab.</p>
-<p>Here&rsquo;s the structure of the slab:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> slab {
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> __page_flags;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">union</span> {
-</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> list_head slab_list;
-</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> rcu_head rcu_head;
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
-</span></span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> {
-</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>next;
-</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">int</span> slabs;	<span style="color:#75715e">/* Nr of slabs left */</span>
-</span></span><span style="display:flex;"><span>		};
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>	};
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache <span style="color:#f92672">*</span>slab_cache;
-</span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Double-word boundary */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>freelist;		<span style="color:#75715e">/* first free object */</span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">union</span> {
-</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> counters;
-</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> {
-</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">unsigned</span> inuse:<span style="color:#ae81ff">16</span>;
-</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">unsigned</span> objects:<span style="color:#ae81ff">15</span>;
-</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">unsigned</span> frozen:<span style="color:#ae81ff">1</span>;
-</span></span><span style="display:flex;"><span>		};
-</span></span><span style="display:flex;"><span>	};
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> __unused;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_t</span> __page_refcount;
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_MEMCG
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> memcg_data;
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>};
-</span></span></code></pre></div><p><strong>Note</strong>: Before the 5.17 Kernel, a slab&rsquo;s metadata was accessed directly via a union in the <code>struct page</code>.</p>
-<ul>
-<li><code>slab_cache</code> is a pointer to the <code>kmem_cache</code> struct the slab belongs to.</li>
-<li><code>freelist</code> is a pointer to the first free object in this slab as we saw earlier.</li>
-<li><code>inuse:16</code> is the number of objects currently allocated.</li>
-<li><code>frozen</code>: mean that the slab is being actively modified by one CPU and should not be accessed by other CPUs</li>
-</ul>
-<p>A slab can consist of one or more pages and this does not depend on the object size i.e.  a slab can consist of multiple pages even if its objects are smaller than a page. The number of pages in a slab depends on <code>kmem_cache.oo</code>.</p>
-<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-4.png" alt="object"></p>
-<p>Last by not least, we have the <code>kmem_cache_node</code> structure:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> kmem_cache_node {
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">spinlock_t</span> list_lock;
-</span></span><span style="display:flex;"><span>
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> nr_partial;
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> list_head partial;
-</span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_DEBUG
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_long_t</span> nr_slabs;
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">atomic_long_t</span> total_objects;
-</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> list_head full;
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> stat[NR_SLUB_STAT_ITEMS];
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
 </span></span></span><span style="display:flex;"><span>};
 </span></span></code></pre></div><ul>
-<li><code>partial</code> is a circular doubly-linked list of all partially filled slabs available for allocation.</li>
-<li><code>nr_partial</code> is the  number of partial slabs.</li>
-<li><code>kmem_cache-&gt;min_partial</code> is the minimum number of partial slabs to retain even when they&rsquo;re empty.</li>
+<li><strong><code>freelist</code></strong>: The fast path (lockless). It points to freed chunks in the <strong>active</strong> slab.</li>
+<li><strong><code>slab</code></strong>: Points to what we call the active slab — the set of pages that contain freed chunks.</li>
 </ul>
-<h2 id="allocating-a-slub-object">Allocating a slub object</h2>
-<p>Allocation always happens from the <strong>active slab</strong> and both per-cpu&rsquo;s <code>freelist</code> and per-cpu&rsquo;s <code>slab.freelist</code> point to a free object on the active slab.</p>
-<p>There are 2 allocation paths for objects: <strong>Fastpath</strong> and <strong>Slowpath</strong>.</p>
-<h3 id="fastpath">Fastpath:</h3>
+<p>The freelist is the fastest path: if it&rsquo;s pointing to a freed object, an allocation returns it. Otherwise, it falls through to <code>slab</code>, the active slab.</p>
+<p>A slab is one or more compound pages that are split into objects:</p>
+<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-3_2.png" alt="timeline"></p>
+<p>The paging is expressed in terms of <strong>order</strong>: if a slab has only 1 page, we say it has order 0, and so on.</p>
+<hr>
+<h2 id="the-struct-slab">The <code>struct slab</code></h2>
+<blockquote>
+<p><strong>Note:</strong> &ldquo;the SLAB allocator&rdquo; vs &ldquo;the slab&rdquo; —
+<strong><code>The SLAB allocator</code></strong> is a design/paradigm of memory allocation, whereas <strong><code>the slab</code></strong> is a data structure.</p>
+</blockquote>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* Reuses the bits in struct page */</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> slab {
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> __page_flags;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache <span style="color:#f92672">*</span>slab_cache; <span style="color:#75715e">// [1]
+</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">union</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">union</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">struct</span> list_head slab_list; <span style="color:#75715e">// [2]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
+</span></span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>next; <span style="color:#75715e">// [2.5]
+</span></span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">int</span> slabs;	<span style="color:#75715e">/* Nr of slabs left */</span>
+</span></span><span style="display:flex;"><span>				};
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span>			};
+</span></span><span style="display:flex;"><span>			<span style="color:#75715e">/* Double-word boundary */</span>
+</span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">union</span> {
+</span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>freelist;	<span style="color:#75715e">// [3]	/* first free object */
+</span></span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">union</span> {
+</span></span><span style="display:flex;"><span>						<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> counters;
+</span></span><span style="display:flex;"><span>						<span style="color:#66d9ef">struct</span> {
+</span></span><span style="display:flex;"><span>							<span style="color:#66d9ef">unsigned</span> inuse:<span style="color:#ae81ff">16</span>;
+</span></span><span style="display:flex;"><span>							<span style="color:#66d9ef">unsigned</span> objects:<span style="color:#ae81ff">15</span>;
+</span></span><span style="display:flex;"><span>							<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">							 * If slab debugging is enabled then the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">							 * frozen bit can be reused to indicate
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">							 * that the slab was corrupted
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">							 */</span>
+</span></span><span style="display:flex;"><span>							<span style="color:#66d9ef">unsigned</span> frozen:<span style="color:#ae81ff">1</span>;
+</span></span><span style="display:flex;"><span>						};
+</span></span><span style="display:flex;"><span>					};
+</span></span><span style="display:flex;"><span>				};
+</span></span><span style="display:flex;"><span>	};
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>As dense as this structure looks, only a few details are relevant:</p>
 <ul>
-<li>allocation happens when per-cpu lockless <code>freelist</code> (<code>kmem_cache.cpu_slab-&gt;freelist</code>) contains free objects. This is the simplest allocation path and it does not involve any locking or irq/preemption disabling. The object at the front of this freelist is returned as an allocated object and next available object in the <code>freelist</code> becomes the head of the list. If allocation ends up consuming all objects in the lockless <code>freelist</code>, then this list becomes <code>NULL</code> and will get objects when allocation is next attempted. As mentioned earlier if the CPU does not support <strong>cmpxchg for 2 words</strong> or if slub debugging (slub_debug) is enabled, <strong><code>Fastpath</code> is not used</strong>.</li>
+<li><strong>[1]</strong> is a pointer to the cache the slab belongs to.</li>
+<li><strong>[2]</strong> &amp; <strong>[2.5]</strong>: the slab has a next pointer/list so the allocator can walk through the slabs.</li>
+<li><strong>[3]</strong> is the pointer to the second freelist, i.e. the 2nd fastest path.</li>
 </ul>
-<p>Scenario:
-When a slab becomes the active slab for a CPU, its freelist is transferred to the CPU&rsquo;s lockless freelist (kmem_cache_cpu-&gt;freelist) and the slab&rsquo;s own freelist is cleared and marked as frozen. Objects are then allocated directly from this per-CPU freelist without any locking. When objects are freed, the behavior depends on which CPU performs the free operation: if freed by the same CPU that allocated them, they&rsquo;re added to the head of that CPU&rsquo;s freelist for immediate reuse. However, if freed by a different CPU, they&rsquo;re atomically added to the frozen slab&rsquo;s freelist using compare-and-swap operations for thread safety, since the slab remains &ldquo;owned&rdquo; by the original CPU. This asymmetric free behavior can lead to a situation where a CPU&rsquo;s per-CPU freelist becomes empty (after allocating all objects) while the slab&rsquo;s freelist accumulates objects (from cross-CPU frees). When the CPU needs more objects and finds its freelist empty, the slow path will check the slab&rsquo;s freelist and transfer any available objects back to the per-CPU freelist before falling back to partial slabs or allocating new slabs entirely. This design optimizes for the common case of same-CPU allocation/free cycles while handling cross-CPU frees safely through atomic operations on the slab&rsquo;s freelist.</p>
-<h3 id="slowpath-1">SLOWPATH 1:</h3>
-<ul>
-<li>If the per-cpu lockless <code>freelist</code> does not contain free objects but the <code>slab.freelist</code> of the active slab does contain free objects then the first object of the slab’s freelist is returned as an allocated object and the <strong>rest of the active slab’s freelist is transferred to that CPU’s lockless freelist and the active slab’s freelist becomes NULL</strong>. This path involves disabling preemption and acquiring <code>kmem_cache_cpu.lock</code> so it is slower than <code>Fastpath</code> allocation but is still faster than other allocation paths. Explicit disabling of preemption is needed for CONFIG_PREEMPT_RT kernels.</li>
-</ul>
-<h3 id="slowpath-2">SLOWPATH 2:</h3>
-<p>In allocation paths discussed so far a CPU’s active slab had some free objects but it may happen that there are no more free objects in the active slab but the per-cpu partial slab list has slabs with free objects (assuming support of partial slab list is enabled). In this case the first slab in the per-cpu partial slab list becomes the active slab, its freelist is transferred to the CPU’s lockless freelist and objects get allocated from that freelist. This path also only involves disabling preemption and acquiring kmem_cache_cpu.lock but has additional overhead compared to the previous path. This additional overhead comes from the fact that in this case we need to make the first slab in per-cpu partial slab list, the current active slab and the second slab (if any) in the per-cpu partial slab list becomes head of this list.</p>
-<p>If per-cpu slabs (active and partial) do not have free objects, then allocation is attempted from slabs from the per-node partial slab list. How does the per-node partial slab list get its slabs ? Slabs are never explicitly allocated for the per-node partial slab list. When a full slab becomes empty or partial, we try to put it into the per-cpu partial slab list first and if that is not possible (either because the per-cpu partial slab list is not supported or because it has the maximum allowed number of objects), the slab is put into the per-node partial slab list. This is how the per-node partial slab list gets its slabs.</p>
-<h3 id="slowpath-3">SLOWPATH 3:</h3>
-<p>Now when neither of the per CPU active or partial slabs have free objects, slub allocator tries to get slabs from the partial slab list of local node but if it can’t find slabs in that node’s partial slab list, then it tries to get partial slabs from the per-node partial slab list corresponding to other nodes. The nodes nearer to CPU are tried first. The traversal of a node’s partial slab list involves acquiring kmem_cache_node.list_lock and since this is a central lock, the involved overhead is much more than acquiring kmem_cache_cpu.lock needed in previously described cases. While looking for a slab, slub allocator iterates through the per-node partial slab list and for the first found slab, it notes the first free object and this object will be returned as an allocated object and the rest of this slab becomes the per-cpu active slab.</p>
-<p>If the per-cpu partial slab list is supported then slub allocator continues even after getting a usable slab and making it the active slab. It moves slabs from the per-node partial slab list to the per-cpu partial slab list and continues doing so until all slabs in the per-node partial slab list have been moved or the limit of maximum number of slabs that can be kept in a per-cpu partial slab list has been reached. The maximum number of slabs that can exist in the per-cpu partial slab list depends on object size. slub allocator tries to keep a certain number of objects available in the per-cpu partial slab list. Based on this number of objects and assuming that each slab will be half full, slub allocator decides how many slabs can reside in the per-cpu partial slab list. The number of objects in the per-cpu partial slab list, depends on the object size and can be 6, 24, 52 or 120. For larger objects, the number of objects that the slub allocator tries to maintain in the per-cpu partial slab list is smaller. For example for objects of size &gt;= PAGE_SIZE this number is 6 and for objects of size &lt; 256 this number is 120.</p>
-<h3 id="very-slowpath">Very SLOWPATH:</h3>
-<p>Lastly if all of the slabs of a slab cache are full, a new slab gets allocated using page allocator and this newly allocated slab becomes the CPU’s current active slab. Amongst all the slow allocation paths this is the slowest one because it involves getting new pages from the <strong>buddy allocator</strong>.</p>
-<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-5.png" alt="object"></p>
-<h2 id="freeing-a-slub-object">Freeing a slub object</h2>
-<p>TO BE CONTINUED</p>
+<p>It should be noted that the lockless freelist and active slab freelist do not intersect, although they live in the same slab. Another thing is that the lockless freelist serves as a bridge between cores for objects to move around.</p>
+<hr>
+<h2 id="partial-lists-and-full-slabs">Partial Lists and Full Slabs</h2>
+<h3 id="what-happens-when-you-free-from-a-full-slab">What happens when you free from a full slab?</h3>
+<p>A slab is full when all its elements are allocated; in that case, it becomes untracked by the cache (except in some debug configs). However, when an element of it is freed, the whole slab that the freed object belongs to is placed into a <strong>partial</strong> list. So every non-full slab that is not the active slab is placed into some partial list — either the per-CPU one, or the node one.</p>
+<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-4_2.png" alt="timeline"></p>
+<p>Note that the per-CPU list has limits; to verify:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>cat /sys/kernel/slab/&lt;cache_name&gt;/cpu_partial
+</span></span></code></pre></div><p>This corresponds to the <code>cpu_partial_slabs</code> member in the cache structure.</p>
+<p>If the per-CPU list hits this limit:</p>
+<ol>
+<li>It purges completely free slabs back into the page allocator — this behaviour is exploited in Cross-Cache attacks.</li>
+<li>It moves the others into the per-node partial list.</li>
+</ol>
+<p>These slabs go back and forth between the active slab and the partial lists as objects are allocated and freed.</p>
+<p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-5_2.png" alt="timeline"></p>
+<hr>
+<h2 id="conclusion">Conclusion</h2>
+<p>These are introductory notes. I&rsquo;ll dive deeper into more interesting things like Cross-Cache and Cross-CPU attacks; the new sheaves mechanism needs to be understood too.</p>
+<hr>
 <h2 id="references">References</h2>
 <p><a href="https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1">https://blogs.oracle.com/linux/post/linux-slub-allocator-internals-and-debugging-1</a><br>
 <a href="https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf">https://events.static.linuxfound.org/images/stories/pdf/klf2012_kim.pdf</a><br>
@@ -384,6 +389,26 @@ When a slab becomes the active slab for a CPU, its freelist is transferred to th
     
     
 </div>
+
+<aside class="post-toc">
+    <nav id="toc">
+        <nav id="TableOfContents">
+  <ul>
+    <li><a href="#introduction">Introduction</a></li>
+    <li><a href="#basic-concepts">Basic Concepts</a></li>
+    <li><a href="#per-cpu-slab">Per-CPU Slab</a></li>
+    <li><a href="#the-struct-slab">The <code>struct slab</code></a></li>
+    <li><a href="#partial-lists-and-full-slabs">Partial Lists and Full Slabs</a>
+      <ul>
+        <li><a href="#what-happens-when-you-free-from-a-full-slab">What happens when you free from a full slab?</a></li>
+      </ul>
+    </li>
+    <li><a href="#conclusion">Conclusion</a></li>
+    <li><a href="#references">References</a></li>
+  </ul>
+</nav>
+    </nav>
+</aside>
 
 
 
