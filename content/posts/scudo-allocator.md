@@ -1,7 +1,7 @@
 +++
 title = 'Scudo Allocator - Internals'
 date = 2026-05-10T16:56:47+02:00
-draft = true
+draft = false
 +++
 
 
@@ -981,7 +981,6 @@ If you are navigating the source for the first time, the easiest way is to treat
 - https://nebelwelt.net/files/24WOOT.pdf
 - https://llvm.org/docs/ScudoHardenedAllocator.html
 - Video: https://www.youtube.com/watch?v=Gnyc0VP2-JU
-
 
 
 
