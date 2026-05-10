@@ -29,7 +29,9 @@ title = "Moe's VR blog"
   bio = """
 Kernel exploitation, Linux internals, cryptography, and vulnerability research.
 """
-  profilePhoto = "/images/0074.png"
+  profilePhoto = "images/0074.png"
+  socialCardImage = "images/scudo/Screenshot-2.png"
+  xHandle = "@AcherirMoe"
   dateFormat = "January 2, 2006"
 
   [params.about]
