@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Graphs on Qdiv7</title>
-    <link>https://mohandacherir.github.io/Qdiv7/tags/graphs/</link>
-    <description>Recent content in Graphs on Qdiv7</description>
-    <generator>Hugo</generator>
+    <title>Graphs on Moe&#39;s VR blog</title>
+    <link>http://localhost:1313/Qdiv7/tags/graphs/</link>
+    <description>Recent content in Graphs on Moe&#39;s VR blog</description>
+    <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
     <lastBuildDate>Mon, 20 Apr 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/graphs/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="http://localhost:1313/Qdiv7/tags/graphs/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>Unix GC Remastered</title>
-      <link>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</link>
+      <link>http://localhost:1313/Qdiv7/posts/unix_new_gc/</link>
       <pubDate>Sun, 19 Apr 2026 00:00:00 +0000</pubDate>
-      <guid>https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/</guid>
-      <description>&lt;h2 id=&#34;introduction&#34;&gt;Introduction&lt;/h2&gt;&#xA;&lt;p&gt;The AF_UNIX garbage collector is an interesting piece of the kernel. It exists because sockets can be sent with SCM_RIGHTS but they can become unreachable from user-space while still being kept alive by the kernel, which is not memory efficient; in this situation, the garbage collector intervenes to free them. Not long ago, the subsystem was rewritten from scratch on top of a graph/Strongly-Connected-Components model; but it is still bug prone.&#xA;This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.&lt;/p&gt;</description>
+      <guid>http://localhost:1313/Qdiv7/posts/unix_new_gc/</guid>
+      <description>Introduction The AF_UNIX garbage collector is an interesting piece of the kernel. It exists because sockets can be sent with SCM_RIGHTS but they can become unreachable from user-space while still being kept alive by the kernel, which is not memory efficient; in this situation, the garbage collector intervenes to free them.</description>
     </item>
   </channel>
 </rss>

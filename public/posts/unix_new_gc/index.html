@@ -1,186 +1,74 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en">
 
-    <style>
-        :root {
-            --accent-color: #FF4D4D;
-        }
-    </style>
+    <head><script src="/Qdiv7/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=Qdiv7/livereload" data-no-instant defer></script><title>Unix GC Remastered &ndash; Moe&#39;s VR blog</title>
+<meta name="description" content="Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.">
 
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"/>
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css" integrity="sha512-IW0nhlW5MgNydsXJO40En2EoCkTTjZhI3yuODrZIc8cQ4h1XcF53PsqDHa09NqnkXuIe0Oiyyj171BqZFwISBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/palettes/base16-dark.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/risotto.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/custom.css">
+
+
+
+
+
+
+
+
+
+
+
+
+<meta property="og:title" content="Unix GC Remastered &ndash; Moe&#39;s VR blog" />
+<meta property="og:url" content="http://localhost:1313/Qdiv7/posts/unix_new_gc/" />
+
+  <meta property="og:description" content="A walkthrough of the rewritten AF_UNIX garbage collector, the CVE-2025-40214 scc_index uninitialised-field bug, and two reproducers. &ndash; "/> 
+
+<meta property="og:locale" content="en" />
+<meta property="og:image" content="" /></head>
+
+    <body>
+        <div class="page">
+
+            <header class="page__header"><nav class="page__nav main-nav">
+    <ul>
+      <li class="nomarker"><h1 class="page__logo"><a href="http://localhost:1313/Qdiv7/" class="page__logo-inner">Moe&#39;s VR blog</a></h1></li>
     
     
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/posts/" title="">Posts</a></li>
     
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/tags/" title="">Tags</a></li>
     
+    <li class="main-nav__item"><a class="nav-main-item" href="https://github.com/MohandAcherir" title="">GitHub</a></li>
     
-    
+    </ul>
+</nav>
 
-    
-    <title>Unix GC Remastered</title>
-    <meta name="description" content="A walkthrough of the rewritten AF_UNIX garbage collector, the CVE-2025-40214 scc_index uninitialised-field bug, and two reproducers.">
-    <meta name="keywords" content='kernel, graphs, exploitation'>
-
-    <meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="Unix GC Remastered">
-    <meta property="og:description" content="A walkthrough of the rewritten AF_UNIX garbage collector, the CVE-2025-40214 scc_index uninitialised-field bug, and two reproducers.">
-    <meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-    <meta property="og:image:secure_url" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Unix GC Remastered">
-    <meta name="twitter:description" content="A walkthrough of the rewritten AF_UNIX garbage collector, the CVE-2025-40214 scc_index uninitialised-field bug, and two reproducers.">
-    <meta property="twitter:domain" content="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
-    <meta property="twitter:url" content="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
-    <meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-
-    
-    <link rel="canonical" href="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/">
-
-    
-    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/normalize.min.css" media="print">
-
-    
-    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/main.min.css">
-
-    
-    <link id="dark-theme" rel="stylesheet" href="/Qdiv7/css/dark.min.css">
-
-    
-    <script src="/Qdiv7/js/bundle.min.e31fb3a8e820298d549c9d82ba29c119c6634dfd51ffe05887d4b702ce828c0d.js" integrity="sha256-4x&#43;zqOggKY1UnJ2CuinBGcZjTf1R/&#43;BYh9S3As6CjA0="></script>
-
-    
-    
-</head>
-<body>
-        <script>
-            
-            setThemeByUserPref();
-        </script><header class="header">
-    <nav class="header-nav">
-
-        
-        <div class="avatar">
-            <a href="https://mohandacherir.github.io/Qdiv7/">
-                <img src='images/0074.png' alt="avatar">
-            </a>
-        </div>
-        
-
-        <div class="nav-title">
-            <a class="nav-brand" href="https://mohandacherir.github.io/Qdiv7/">Qdiv7</a>
-        </div>
-
-        <div class="nav-links">
-            
-            <div class="nav-link">
-                <a href="https://mohandacherir.github.io/Qdiv7/posts/" aria-label="" > Posts </a>
-            </div>
-            
-            <div class="nav-link">
-                <a href="https://mohandacherir.github.io/Qdiv7/tags/" aria-label="" > Tags </a>
-            </div>
-            
-            <div class="nav-link">
-                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
-            </div>
-            
-
-            <span class="nav-icons-divider"></span>
-            <div class="nav-link dark-theme-toggle">
-                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
-                <a aria-hidden="true" role="switch">
-                    <span class="theme-toggle-icon" data-feather="moon"></span>
-                </a>
-            </div>
-
-            <div class="nav-link" id="hamburger-menu-toggle">
-                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
-                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
-                    <span data-feather="menu"></span>
-                </a>
-            </div>
-
-            
-            <ul class="nav-hamburger-list visibility-hidden">
-                
-                <li class="nav-item">
-                    <a href="https://mohandacherir.github.io/Qdiv7/posts/" > Posts </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a href="https://mohandacherir.github.io/Qdiv7/tags/" > Tags </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
-                </li>
-                
-                <li class="nav-item dark-theme-toggle">
-                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
-                    <a role="switch">
-                        <span class="theme-toggle-icon" data-feather="moon"></span>
-                    </a>
-                </li>
-            </ul>
-
-        </div>
-    </nav>
 </header>
-<main id="content">
-    <div class="post container">
-    <div class="post-header-section">
+
+            <section class="page__body">
+    <header class="content__header">
         <h1>Unix GC Remastered</h1>
-
-        
-
-        
-	
-	
-	
-	
-        
-
-	
-
-	
-
-	
-          <small role="doc-subtitle">A walkthrough of the rewritten AF_UNIX garbage collector, the CVE-2025-40214 scc_index uninitialised-field bug, and two reproducers.</small>
-	
-
-	
-          <p class="post-date">April 19, 2026
-            | Updated April 20, 2026
-          </p>
-	
-
-        <ul class="post-tags">
-          
-           
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/kernel">kernel</a></li>
-           
-         
-           
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/graphs">graphs</a></li>
-           
-         
-           
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/exploitation">exploitation</a></li>
-           
-         
-        </ul>
-    </div>
-
-    <div class="post-content">
+    </header>
+    <div class="content__body">
         <h2 id="introduction">Introduction</h2>
 <p>The AF_UNIX garbage collector is an interesting piece of the kernel. It exists because sockets can be sent with SCM_RIGHTS but they can become unreachable from user-space while still being kept alive by the kernel, which is not memory efficient; in this situation, the garbage collector intervenes to free them. Not long ago, the subsystem was rewritten from scratch on top of a graph/Strongly-Connected-Components model; but it is still bug prone.
 This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <hr>
 <h2 id="af_unix-garbage-collector--background">AF_UNIX Garbage Collector — Background</h2>
 <p>A per-subsystem garbage collector is responsible for reclaiming kernel objects that can no longer be reached through user-space handles. For AF_UNIX, the entry point is <code>unix_gc()</code>:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#a6e22e">DECLARE_WORK</span>(unix_gc_work, __unix_gc);
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#a6e22e">DECLARE_WORK</span>(unix_gc_work, __unix_gc);
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_gc</span>(<span style="color:#66d9ef">void</span>)
 </span></span><span style="display:flex;"><span>{
@@ -188,7 +76,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">queue_work</span>(system_dfl_wq, <span style="color:#f92672">&amp;</span>unix_gc_work);
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p>Its real body is <code>__unix_gc()</code>:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sk_buff_head hitlist;
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
@@ -219,7 +107,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">WRITE_ONCE</span>(gc_in_progress, false);
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><h3 id="the-unix_sock-structure">The <code>unix_sock</code> structure</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> unix_sock {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> unix_sock {
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* WARNING: sk has to be the first member */</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sock          sk;         <span style="color:#75715e">/* inheritance */</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> unix_address <span style="color:#f92672">*</span>addr;       <span style="color:#75715e">/* bound name */</span>
@@ -242,14 +130,14 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <ol>
 <li>
 <p>Too many inflight sockets:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">READ_ONCE</span>(unix_tot_inflight) <span style="color:#f92672">&gt;</span> UNIX_INFLIGHT_TRIGGER_GC <span style="color:#f92672">&amp;&amp;</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (<span style="color:#a6e22e">READ_ONCE</span>(unix_tot_inflight) <span style="color:#f92672">&gt;</span> UNIX_INFLIGHT_TRIGGER_GC <span style="color:#f92672">&amp;&amp;</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#f92672">!</span><span style="color:#a6e22e">READ_ONCE</span>(gc_in_progress))
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">unix_gc</span>();
 </span></span></code></pre></div><p>(<code>UNIX_INFLIGHT_TRIGGER_GC == 16000</code>.)</p>
 </li>
 <li>
 <p>A socket close, if anything is inflight:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> proto_ops unix_stream_ops <span style="color:#f92672">=</span> {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">struct</span> proto_ops unix_stream_ops <span style="color:#f92672">=</span> {
 </span></span><span style="display:flex;"><span>    .family  <span style="color:#f92672">=</span> PF_UNIX,
 </span></span><span style="display:flex;"><span>    .owner   <span style="color:#f92672">=</span> THIS_MODULE,
 </span></span><span style="display:flex;"><span>    .release <span style="color:#f92672">=</span> unix_release,
@@ -283,7 +171,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <p><img src="/Qdiv7/images/gc_remastered/Screenshot-gc-3.png" alt=""></p>
 <p>A cycle is a <em>necessary but not sufficient</em> condition for a vertex to be collectable: collection requires the vertex to be inflight, and unreachable from user-space (<code>file_count == out_degree</code>). Sockets not in any cycle cannot possibly be mutually-pinning garbage, and are skipped.</p>
 <h3 id="how-__unix_gc-dispatches">How <code>__unix_gc</code> dispatches</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">__unix_gc</span>(<span style="color:#66d9ef">struct</span> work_struct <span style="color:#f92672">*</span>work)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sk_buff_head hitlist;     <span style="color:#75715e">/* [2] final hit-list of skbs to free */</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> sk_buff <span style="color:#f92672">*</span>skb;
@@ -297,7 +185,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>    <span style="color:#75715e">/* ... */</span>
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p><code>unix_graph_maybe_cyclic</code> is flipped on whenever a new edge is added with both endpoints inflight:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_add_edge</span>(<span style="color:#66d9ef">struct</span> scm_fp_list <span style="color:#f92672">*</span>fpl, <span style="color:#66d9ef">struct</span> unix_edge <span style="color:#f92672">*</span>edge)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_add_edge</span>(<span style="color:#66d9ef">struct</span> scm_fp_list <span style="color:#f92672">*</span>fpl, <span style="color:#66d9ef">struct</span> unix_edge <span style="color:#f92672">*</span>edge)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> unix_vertex <span style="color:#f92672">*</span>vertex <span style="color:#f92672">=</span> edge<span style="color:#f92672">-&gt;</span>predecessor<span style="color:#f92672">-&gt;</span>vertex;
 </span></span><span style="display:flex;"><span>
@@ -324,13 +212,13 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div><p>Note that <code>unix_update_graph()</code> <em>also</em> resets <code>unix_graph_grouped = false</code>, forcing the next GC to rebuild SCCs from scratch.</p>
 <p>Dispatch between slow and fast paths:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (unix_graph_grouped)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (unix_graph_grouped)
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">unix_walk_scc_fast</span>(<span style="color:#f92672">&amp;</span>hitlist);
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">else</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">unix_walk_scc</span>(<span style="color:#f92672">&amp;</span>hitlist);
 </span></span></code></pre></div><h3 id="slow-path--unix_walk_scc">Slow path — <code>unix_walk_scc()</code></h3>
 <p>This is where SCCs are actually built:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_walk_scc</span>(<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_walk_scc</span>(<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> last_index <span style="color:#f92672">=</span> UNIX_VERTEX_INDEX_START;
 </span></span><span style="display:flex;"><span>
@@ -357,7 +245,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <p>See the <a href="https://en.wikipedia.org/wiki/Tarjan%27s_strongly_connected_components_algorithm">Wikipedia page</a> for the formal write-up.</p>
 <p><img src="/Qdiv7/images/gc_remastered/tarjan.gif" alt=""></p>
 <p>Pseudocode, matching the kernel&rsquo;s in-place iterative form:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>For each unvisited vertex v:
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>For each unvisited vertex v:
 </span></span><span style="display:flex;"><span>    <span style="color:#a6e22e">__unix_walk_scc</span>(v, last_index, hitlist)
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>
@@ -372,15 +260,15 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> each edge e: (v, w) in the Graph:
 </span></span><span style="display:flex;"><span>        <span style="color:#75715e">// w == e.successor
-</span></span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> vertex w is not yet visited:
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">if</span> vertex w is not yet visited:
 </span></span><span style="display:flex;"><span>            edge_S.<span style="color:#a6e22e">push</span>(e: (v, w))
 </span></span><span style="display:flex;"><span>            v <span style="color:#f92672">&lt;-</span> w
 </span></span><span style="display:flex;"><span>            <span style="color:#66d9ef">goto</span> next_vertex
 </span></span><span style="display:flex;"><span>            <span style="color:#f92672">|------------------------------|</span>
 </span></span><span style="display:flex;"><span>         <span style="color:#f92672">-&gt;</span> prev_vertex:  <span style="color:#75715e">// returning from recursion
-</span></span></span><span style="display:flex;"><span>            edge <span style="color:#f92672">=</span> edge_S.<span style="color:#a6e22e">pop</span>()
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            edge <span style="color:#f92672">=</span> edge_S.<span style="color:#a6e22e">pop</span>()
 </span></span><span style="display:flex;"><span>            <span style="color:#75715e">// backtrack
-</span></span></span><span style="display:flex;"><span>            w <span style="color:#f92672">&lt;-</span> v
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>            w <span style="color:#f92672">&lt;-</span> v
 </span></span><span style="display:flex;"><span>            v <span style="color:#f92672">&lt;-</span> edge.predecessor.vertex
 </span></span><span style="display:flex;"><span>            v.scc_index <span style="color:#f92672">=</span> <span style="color:#a6e22e">min</span>(v.scc_index, w.scc_index)
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">else</span> <span style="color:#66d9ef">if</span> w is not in another SCC:
@@ -391,8 +279,8 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>        scc_dead <span style="color:#f92672">&lt;-</span> true
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>        <span style="color:#75715e">// vertex_S == [SCC(0)][SCC(1)][...][SCC(N)]
-</span></span></span><span style="display:flex;"><span>        <span style="color:#75715e">// cut off [v ...] into `scc`
-</span></span></span><span style="display:flex;"><span>        scc <span style="color:#f92672">&lt;-</span> [v ...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#75715e">// cut off [v ...] into `scc`
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        scc <span style="color:#f92672">&lt;-</span> [v ...]
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">while</span> scc is not empty:
 </span></span><span style="display:flex;"><span>            u <span style="color:#f92672">&lt;-</span> scc.<span style="color:#a6e22e">pop</span>()
@@ -413,7 +301,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">goto</span> prev_vertex
 </span></span></code></pre></div><h3 id="fast-path--unix_walk_scc_fast">Fast path — <code>unix_walk_scc_fast()</code></h3>
 <p>When the graph shape is unchanged since the last GC (<code>unix_graph_grouped == true</code>), the SCCs are reused as-is:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_walk_scc_fast</span>(<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">unix_walk_scc_fast</span>(<span style="color:#66d9ef">struct</span> sk_buff_head <span style="color:#f92672">*</span>hitlist)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    unix_graph_maybe_cyclic <span style="color:#f92672">=</span> false;
 </span></span><span style="display:flex;"><span>
@@ -447,65 +335,65 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <hr>
 <h2 id="cve-2025-40214--kctf-entry">CVE-2025-40214 — kCTF entry</h2>
 <h3 id="the-patch">The patch</h3>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-diff" data-lang="diff"><span style="display:flex;"><span>diff --git a/net/unix/garbage.c b/net/unix/garbage.c
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-diff" data-lang="diff"><span style="display:flex;"><span>diff --git a/net/unix/garbage.c b/net/unix/garbage.c
 </span></span><span style="display:flex;"><span>index 684ab03137b6c..65396a4e1b07e 100644
 </span></span><span style="display:flex;"><span><span style="color:#f92672">--- a/net/unix/garbage.c
-</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+++ b/net/unix/garbage.c
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -145,6 +145,7 @@ enum unix_vertex_index {
-</span></span></span><span style="display:flex;"><span> };
+</span></span></span><span style="display:flex;"><span><span style="color:#f92672"></span><span style="color:#a6e22e">+++ b/net/unix/garbage.c
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e"></span><span style="color:#75715e">@@ -145,6 +145,7 @@ enum unix_vertex_index {
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span> };
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span> static unsigned long unix_vertex_unvisited_index = UNIX_VERTEX_INDEX_MARK1;
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">+static unsigned long unix_vertex_max_scc_index = UNIX_VERTEX_INDEX_START;
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e"></span>
 </span></span><span style="display:flex;"><span> static void unix_add_edge(struct scm_fp_list *fpl, struct unix_edge *edge)
 </span></span><span style="display:flex;"><span> {
 </span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -153,6 +154,7 @@ static void unix_add_edge(struct scm_fp_list *fpl, struct unix_edge *edge)
-</span></span></span><span style="display:flex;"><span>    if (!vertex) {
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    if (!vertex) {
 </span></span><span style="display:flex;"><span>        vertex = list_first_entry(&amp;fpl-&gt;vertices, typeof(*vertex), entry);
 </span></span><span style="display:flex;"><span>        vertex-&gt;index = unix_vertex_unvisited_index;
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">+       vertex-&gt;scc_index = ++unix_vertex_max_scc_index;
-</span></span></span><span style="display:flex;"><span>        vertex-&gt;out_degree = 0;
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e"></span>        vertex-&gt;out_degree = 0;
 </span></span><span style="display:flex;"><span>        INIT_LIST_HEAD(&amp;vertex-&gt;edges);
 </span></span><span style="display:flex;"><span>        INIT_LIST_HEAD(&amp;vertex-&gt;scc_entry);
 </span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -489,10 +491,15 @@ prev_vertex:
-</span></span></span><span style="display:flex;"><span>                scc_dead = unix_vertex_dead(v);
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>                scc_dead = unix_vertex_dead(v);
 </span></span><span style="display:flex;"><span>        }
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#f92672">-       if (scc_dead)
-</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+       if (scc_dead) {
-</span></span></span><span style="display:flex;"><span>            unix_collect_skb(&amp;scc, hitlist);
+</span></span></span><span style="display:flex;"><span><span style="color:#f92672"></span><span style="color:#a6e22e">+       if (scc_dead) {
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e"></span>            unix_collect_skb(&amp;scc, hitlist);
 </span></span><span style="display:flex;"><span><span style="color:#f92672">-       else if (!unix_graph_maybe_cyclic)
 </span></span></span><span style="display:flex;"><span><span style="color:#f92672">-           unix_graph_maybe_cyclic = unix_scc_cyclic(&amp;scc);
-</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+       } else {
+</span></span></span><span style="display:flex;"><span><span style="color:#f92672"></span><span style="color:#a6e22e">+       } else {
 </span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+           if (unix_vertex_max_scc_index &lt; vertex-&gt;scc_index)
 </span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+               unix_vertex_max_scc_index = vertex-&gt;scc_index;
 </span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+
 </span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+           if (!unix_graph_maybe_cyclic)
 </span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+               unix_graph_maybe_cyclic = unix_scc_cyclic(&amp;scc);
 </span></span></span><span style="display:flex;"><span><span style="color:#a6e22e">+       }
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e"></span>
 </span></span><span style="display:flex;"><span>        list_del(&amp;scc);
 </span></span><span style="display:flex;"><span>    }
 </span></span><span style="display:flex;"><span><span style="color:#75715e">@@ -507,6 +514,7 @@ static void unix_walk_scc(struct sk_buff_head *hitlist)
-</span></span></span><span style="display:flex;"><span>    unsigned long last_index = UNIX_VERTEX_INDEX_START;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    unsigned long last_index = UNIX_VERTEX_INDEX_START;
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>    unix_graph_maybe_cyclic = false;
 </span></span><span style="display:flex;"><span><span style="color:#a6e22e">+   unix_vertex_max_scc_index = UNIX_VERTEX_INDEX_START;
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#a6e22e"></span>
 </span></span><span style="display:flex;"><span>    /* Visit every vertex exactly once.
 </span></span><span style="display:flex;"><span>     * __unix_walk_scc() moves visited vertices to unix_visited_vertices.
 </span></span></code></pre></div><h3 id="root-cause">Root cause:</h3>
 <p>unix_add_edge() initialises a freshly-allocated struct unix_vertex’s index, out_degree, edges, and scc_entry fields, but not scc_index. That field reads back whatever the previous slab occupant wrote there. The fast-path dead-SCC check (unix_vertex_dead()) compares scc_index across vertices to decide whether an outgoing edge leaves the SCC:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (next_vertex<span style="color:#f92672">-&gt;</span>scc_index <span style="color:#f92672">!=</span> vertex<span style="color:#f92672">-&gt;</span>scc_index)
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (next_vertex<span style="color:#f92672">-&gt;</span>scc_index <span style="color:#f92672">!=</span> vertex<span style="color:#f92672">-&gt;</span>scc_index)
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> false;   <span style="color:#75715e">/* edge leaves the SCC → vertex not dead */</span>
 </span></span></code></pre></div><p>If we can arrange for a freshly-allocated vertex to inherit the <em>same</em> <code>scc_index</code> value as a live, user-held socket’s vertex, the dead-SCC check returns <code>true</code> on the live socket and its receive queue is purged; result: a logical use-after-free of every file it was carrying.</p>
 <p>The patch fixes this unconditionally with a monotonically increasing <code>unix_vertex_max_scc_index</code> counter assigned on every fresh <code>unix_add_edge()</code>, guaranteeing no accidental aliasing can ever happen.</p>
 <p>The author <a href="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=60e6489f8e3b086bd1130ad4450a2c112e863791">described his strategy</a> to produce the bug:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#ae81ff">1</span>) heap spray to shape the <span style="color:#960050;background-color:#1e0010">`</span>out_degree<span style="color:#960050;background-color:#1e0010">`</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#ae81ff">1</span>) heap spray to shape the <span style="color:#960050;background-color:#1e0010">`</span>out_degree<span style="color:#960050;background-color:#1e0010">`</span>
 </span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">2</span>) build A<span style="color:#960050;background-color:#1e0010">→</span><span style="color:#a6e22e">embryo</span>(B) and X<span style="color:#960050;background-color:#1e0010">→</span>X <span style="color:#f92672">+</span> slow GC
 </span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">3</span>) <span style="color:#a6e22e">accept</span>(B), B<span style="color:#960050;background-color:#1e0010">→</span>C, <span style="color:#a6e22e">close</span>(A), fast GC
 </span></span></code></pre></div><p>Through reading this, i devised another strategy which is still very close to the author’s:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#ae81ff">1</span>) Still <span style="color:#66d9ef">do</span> the spraying
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>    <span style="color:#ae81ff">1</span>) Still <span style="color:#66d9ef">do</span> the spraying
 </span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">2</span>) B <span style="color:#960050;background-color:#1e0010">↔</span> <span style="color:#a6e22e">A</span>           (two<span style="color:#f92672">-</span>socket SCC <span style="color:#960050;background-color:#1e0010">→</span> scc_index<span style="color:#f92672">=</span><span style="color:#ae81ff">2</span> on both)
 </span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">3</span>) A <span style="color:#960050;background-color:#1e0010">→</span> C
 </span></span><span style="display:flex;"><span>    <span style="color:#ae81ff">4</span>) C <span style="color:#960050;background-color:#1e0010">→</span> D
@@ -526,7 +414,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 <p>On a vulnerable kernel with the printk patch from the annex added:</p>
 <pre tabindex="0"><code>[+] SCC DEAD Confirmed : Right before returning &#39;true&#39; in unix_vertex_dead()
 </code></pre><p><strong>Reproducer</strong>:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#define _GNU_SOURCE
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">#define _GNU_SOURCE
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;errno.h&gt;</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stddef.h&gt;</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;stdio.h&gt;</span><span style="color:#75715e">
@@ -536,10 +424,10 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/socket.h&gt;</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;sys/un.h&gt;</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#include</span> <span style="color:#75715e">&lt;time.h&gt;</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#define N_CYCLE       100   </span><span style="color:#75715e">/* sockets per spray round             */</span><span style="color:#75715e">
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#define SPRAY_ROUNDS    1   </span><span style="color:#75715e">/* rounds × N_CYCLE vertices sprayed   */</span><span style="color:#75715e">
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">die</span>(<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>s) { <span style="color:#a6e22e">perror</span>(s); <span style="color:#a6e22e">exit</span>(<span style="color:#ae81ff">1</span>); }
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span> <span style="color:#75715e">/*
@@ -633,7 +521,7 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#define KICK_ROUNDS 1
-</span></span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">kick_gc</span>(<span style="color:#66d9ef">void</span>)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">kick_gc</span>(<span style="color:#66d9ef">void</span>)
 </span></span><span style="display:flex;"><span>{
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (<span style="color:#66d9ef">int</span> i <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; i <span style="color:#f92672">&lt;</span> KICK_ROUNDS; i<span style="color:#f92672">++</span>) {
 </span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">struct</span> sockaddr_un a, b;
@@ -718,67 +606,52 @@ This post walks the rewrite end-to-end, and discusses a Use-After-Free bug.</p>
 </span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0</span>;
 </span></span><span style="display:flex;"><span>}
 </span></span></code></pre></div>
-        
     </div>
+    <footer class="content__footer"></footer>
 
-    <div class="prev-next">
-        
-    </div>
+            </section>
 
+            <section class="page__aside">
+                <div class="aside__about">
+<div class="aside__about">
     
     
-    
+<h1 class="about__title">Moe&#39;s VR blog</h1>
+<p class="about__description">Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.</p>
 </div>
 
-<aside class="post-toc">
-    <nav id="toc">
-        <nav id="TableOfContents">
-  <ul>
-    <li><a href="#introduction">Introduction</a></li>
-    <li><a href="#af_unix-garbage-collector--background">AF_UNIX Garbage Collector — Background</a>
-      <ul>
-        <li><a href="#the-unix_sock-structure">The <code>unix_sock</code> structure</a></li>
-        <li><a href="#when-gc-runs">When GC runs</a></li>
-      </ul>
-    </li>
-    <li><a href="#the-old-gc">The Old GC</a></li>
-    <li><a href="#the-new-gc">The New GC</a>
-      <ul>
-        <li><a href="#graph-representation">Graph representation</a></li>
-        <li><a href="#how-__unix_gc-dispatches">How <code>__unix_gc</code> dispatches</a></li>
-        <li><a href="#slow-path--unix_walk_scc">Slow path — <code>unix_walk_scc()</code></a></li>
-        <li><a href="#tarjans-algorithm">Tarjan&rsquo;s algorithm</a></li>
-        <li><a href="#fast-path--unix_walk_scc_fast">Fast path — <code>unix_walk_scc_fast()</code></a></li>
-      </ul>
-    </li>
-    <li><a href="#cve-2025-40214--kctf-entry">CVE-2025-40214 — kCTF entry</a>
-      <ul>
-        <li><a href="#the-patch">The patch</a></li>
-        <li><a href="#root-cause">Root cause:</a></li>
-      </ul>
-    </li>
-  </ul>
-</nav>
-    </nav>
-</aside>
 
-
-
+<ul class="aside__social-links">
     
-
-        </main><footer class="footer">
+</ul>
+</div>
+                <hr>
+                <div class="aside__content">
+    <p>A walkthrough of the rewritten AF_UNIX garbage collector, the CVE-2025-40214 scc_index uninitialised-field bug, and two reproducers.</p>
     
+        <p>
+            
+            2026-04-19
+        </p>
     
 
     
 
-    
+                </div>
+            </section>
 
-    
+            <footer class="page__footer">
 
-    <span>
-        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
-    </span>
+<p class="language-note">
+  <span>Language:</span>
+  <strong>English</strong>
+</p>
+
+<p class="copyright"></p>
+<p class="advertisement">Powered by <a href="https://gohugo.io/">hugo</a> and <a href="https://github.com/joeroe/risotto">risotto</a>.</p>
 </footer>
-</body>
+
+        </div>
+    </body>
+
 </html>

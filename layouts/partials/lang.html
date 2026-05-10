@@ -1,0 +1,19 @@
+{{ $translations := .Page.AllTranslations }}
+{{ if gt (len $translations) 1 }}
+<p class="language-note">
+  <span>Language:</span>
+  {{ range $index, $translation := $translations }}
+    {{ if gt $index 0 }} · {{ end }}
+    {{ if eq $.Page.Lang $translation.Lang }}
+      <strong>{{ $translation.Language.LanguageName }}</strong>
+    {{ else }}
+      <a href="{{ $translation.Permalink }}">{{ $translation.Language.LanguageName }}</a>
+    {{ end }}
+  {{ end }}
+</p>
+{{ else }}
+<p class="language-note">
+  <span>Language:</span>
+  <strong>{{ .Site.Language.LanguageName | default "English" }}</strong>
+</p>
+{{ end }}

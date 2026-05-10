@@ -1,173 +1,113 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en">
 
-    <style>
-        :root {
-            --accent-color: #FF4D4D;
-        }
-    </style>
+    <head><script src="/Qdiv7/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=Qdiv7/livereload" data-no-instant defer></script><title>Graphs &ndash; Moe&#39;s VR blog</title>
+<meta name="description" content="Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.">
 
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"/>
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css" integrity="sha512-IW0nhlW5MgNydsXJO40En2EoCkTTjZhI3yuODrZIc8cQ4h1XcF53PsqDHa09NqnkXuIe0Oiyyj171BqZFwISBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/palettes/base16-dark.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/risotto.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/custom.css">
+
+
+
+
+
+
+
+
+
+<link rel="alternate" type="application/rss+xml" href="http://localhost:1313/Qdiv7/tags/graphs/index.xml" title="Moe's VR blog">
+
+
+
+<meta property="og:title" content="Graphs &ndash; Moe&#39;s VR blog" />
+<meta property="og:url" content="http://localhost:1313/Qdiv7/tags/graphs/" />
+
+  
+    <meta property="og:description" content="Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring."/> 
+  
+
+<meta property="og:locale" content="en" />
+<meta property="og:image" content="" /></head>
+
+    <body>
+        <div class="page">
+
+            <header class="page__header"><nav class="page__nav main-nav">
+    <ul>
+      <li class="nomarker"><h1 class="page__logo"><a href="http://localhost:1313/Qdiv7/" class="page__logo-inner">Moe&#39;s VR blog</a></h1></li>
     
     
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/posts/" title="">Posts</a></li>
     
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/tags/" title="">Tags</a></li>
     
+    <li class="main-nav__item"><a class="nav-main-item" href="https://github.com/MohandAcherir" title="">GitHub</a></li>
     
-    
+    </ul>
+</nav>
 
-    
-    <title>Graphs</title>
-    <meta name="description" content="My InfoSec blog">
-    <meta name="keywords" content=''>
-
-    <meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/tags/graphs/">
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="Graphs">
-    <meta property="og:description" content="My InfoSec blog">
-    <meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-    <meta property="og:image:secure_url" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Graphs">
-    <meta name="twitter:description" content="My InfoSec blog">
-    <meta property="twitter:domain" content="https://mohandacherir.github.io/Qdiv7/tags/graphs/">
-    <meta property="twitter:url" content="https://mohandacherir.github.io/Qdiv7/tags/graphs/">
-    <meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-
-    
-    <link rel="canonical" href="https://mohandacherir.github.io/Qdiv7/tags/graphs/">
-
-    
-    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/normalize.min.css" media="print">
-
-    
-    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/main.min.css">
-
-    
-    <link id="dark-theme" rel="stylesheet" href="/Qdiv7/css/dark.min.css">
-
-    
-    <script src="/Qdiv7/js/bundle.min.e31fb3a8e820298d549c9d82ba29c119c6634dfd51ffe05887d4b702ce828c0d.js" integrity="sha256-4x&#43;zqOggKY1UnJ2CuinBGcZjTf1R/&#43;BYh9S3As6CjA0="></script>
-
-    
-    
-</head>
-<body>
-        <script>
-            
-            setThemeByUserPref();
-        </script><header class="header">
-    <nav class="header-nav">
-
-        
-        <div class="avatar">
-            <a href="https://mohandacherir.github.io/Qdiv7/">
-                <img src='images/0074.png' alt="avatar">
-            </a>
-        </div>
-        
-
-        <div class="nav-title">
-            <a class="nav-brand" href="https://mohandacherir.github.io/Qdiv7/">Qdiv7</a>
-        </div>
-
-        <div class="nav-links">
-            
-            <div class="nav-link">
-                <a href="https://mohandacherir.github.io/Qdiv7/posts/" aria-label="" > Posts </a>
-            </div>
-            
-            <div class="nav-link">
-                <a href="https://mohandacherir.github.io/Qdiv7/tags/" aria-label="" > Tags </a>
-            </div>
-            
-            <div class="nav-link">
-                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
-            </div>
-            
-
-            <span class="nav-icons-divider"></span>
-            <div class="nav-link dark-theme-toggle">
-                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
-                <a aria-hidden="true" role="switch">
-                    <span class="theme-toggle-icon" data-feather="moon"></span>
-                </a>
-            </div>
-
-            <div class="nav-link" id="hamburger-menu-toggle">
-                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
-                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
-                    <span data-feather="menu"></span>
-                </a>
-            </div>
-
-            
-            <ul class="nav-hamburger-list visibility-hidden">
-                
-                <li class="nav-item">
-                    <a href="https://mohandacherir.github.io/Qdiv7/posts/" > Posts </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a href="https://mohandacherir.github.io/Qdiv7/tags/" > Tags </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
-                </li>
-                
-                <li class="nav-item dark-theme-toggle">
-                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
-                    <a role="switch">
-                        <span class="theme-toggle-icon" data-feather="moon"></span>
-                    </a>
-                </li>
-            </ul>
-
-        </div>
-    </nav>
 </header>
-<main id="content">
-    <div class="container list-posts">
 
-    <h1 class="list-title"></h1>
+            <section class="page__body">
+    <h1 id="graphs">Graphs</h1>
 
     
 
-    <h2 class="posts-year">2026</h2><div class="post-title">
-     <a href="https://mohandacherir.github.io/Qdiv7/posts/unix_new_gc/" class="post-link">Unix GC Remastered</a>
-     
-     
-     
-     
+    <ul>
+    
+        <li><a href="http://localhost:1313/Qdiv7/posts/unix_new_gc/">Unix GC Remastered</a></li>
 
-     
+    
+    </ul>
 
-     
-      <div class="flex-break"></div>
-      <span class="post-date">April 19, 2026</span>
-     
+
+            </section>
+
+            <section class="page__aside">
+                <div class="aside__about">
+<div class="aside__about">
+    
+    
+<h1 class="about__title">Moe&#39;s VR blog</h1>
+<p class="about__description">Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.</p>
 </div>
 
-    
 
+<ul class="aside__social-links">
+    
+</ul>
 </div>
-
-
-        </main><footer class="footer">
-    
+                <hr>
+                <div class="aside__content">
     
 
-    
+                </div>
+            </section>
 
-    
+            <footer class="page__footer">
 
-    
+<p class="language-note">
+  <span>Language:</span>
+  <strong>English</strong>
+</p>
 
-    <span>
-        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
-    </span>
+<p class="copyright"></p>
+<p class="advertisement">Powered by <a href="https://gohugo.io/">hugo</a> and <a href="https://github.com/joeroe/risotto">risotto</a>.</p>
 </footer>
-</body>
+
+        </div>
+    </body>
+
 </html>

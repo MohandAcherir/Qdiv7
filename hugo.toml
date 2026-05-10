@@ -3,20 +3,14 @@ defaultContentLanguage = "en"
 # Automatically generate robots.txt
 enableRobotsTXT = true
 languageCode = "en"
-theme = "gokarna"
-title = "Qdiv7"
-avatarURL = "images/0074.png"
+summaryLength = 36
+theme = "risotto"
+title = "Moe's VR blog"
 
 [menu]
   [[menu.main]]
-    # Display name
     name = "Posts"
-
-    # Relative URL slug (appended to baseURL)
     url = "/posts/"
-
-    # Lower weights are listed first in the menu (leftmost); higher weights are
-    # listed last in the menu (rightmost)
     weight = 1
 
   [[menu.main]]
@@ -25,28 +19,31 @@ avatarURL = "images/0074.png"
     weight = 2
     
   [[menu.main]]
-    # Unique identifiers are required for menu entries without a name property,
-    # or for menu entries which re-use a name
     identifier = "github"
-
-    # Absolute URL to external resource
+    name = "GitHub"
     url = "https://github.com/MohandAcherir"
     weight = 3
-    
-    # Surround the menu entry (or name) with HTML content, such as Feather
-    # icons: https://feathericons.com
-    pre = "<span data-feather='github'></span>"
-    post = ""
 
+[params]
+  description = "Writeups on kernel exploitation, Linux internals, cryptography, and vulnerability research."
+  bio = """
+Kernel exploitation, Linux internals, cryptography, and vulnerability research.
+"""
+  profilePhoto = "/images/0074.png"
+  dateFormat = "January 2, 2006"
 
- [params]
-    description = "My InfoSec blog"
-    socialIcons = [
-      {name = "twitter", url = "https://x.com/AcherirMoe/"},
-      {name = "linkedin", url = "https://linkedin.com/in/mohand-a-acherir-b42911264/"},
-      {name = "rootme", url = "https://root-me.org/Acherir7"},
-    ]
-    avatarURL = "images/0074.png"
-    #logo = "../images/0072.png"
-    dateFormat = "January 2, 2006"
+  [params.about]
+    title = "Moe's VR blog"
+    description = "Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring."
 
+  [[params.social]]
+    name = "GitHub"
+    url = "https://github.com/MohandAcherir"
+
+  [[params.social]]
+    name = "X"
+    url = "https://x.com/AcherirMoe/"
+
+  [[params.social]]
+    name = "LinkedIn"
+    url = "https://linkedin.com/in/mohand-a-acherir-b42911264/"

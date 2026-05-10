@@ -1,179 +1,67 @@
 <!DOCTYPE html>
-<html lang="en"><head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+<html lang="en">
 
-    <style>
-        :root {
-            --accent-color: #FF4D4D;
-        }
-    </style>
+    <head><script src="/Qdiv7/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=Qdiv7/livereload" data-no-instant defer></script><title>Notes on Linux Internals: The Slab Allocator &ndash; Moe&#39;s VR blog</title>
+<meta name="description" content="Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.">
 
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"/>
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css" integrity="sha512-IW0nhlW5MgNydsXJO40En2EoCkTTjZhI3yuODrZIc8cQ4h1XcF53PsqDHa09NqnkXuIe0Oiyyj171BqZFwISBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/palettes/base16-dark.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/risotto.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/custom.css">
+
+
+
+
+
+
+
+
+
+
+
+
+<meta property="og:title" content="Notes on Linux Internals: The Slab Allocator &ndash; Moe&#39;s VR blog" />
+<meta property="og:url" content="http://localhost:1313/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/" />
+
+  <meta property="og:description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path. &ndash; "/> 
+
+<meta property="og:locale" content="en" />
+<meta property="og:image" content="" /></head>
+
+    <body>
+        <div class="page">
+
+            <header class="page__header"><nav class="page__nav main-nav">
+    <ul>
+      <li class="nomarker"><h1 class="page__logo"><a href="http://localhost:1313/Qdiv7/" class="page__logo-inner">Moe&#39;s VR blog</a></h1></li>
     
     
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/posts/" title="">Posts</a></li>
     
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/tags/" title="">Tags</a></li>
     
+    <li class="main-nav__item"><a class="nav-main-item" href="https://github.com/MohandAcherir" title="">GitHub</a></li>
     
-    
+    </ul>
+</nav>
 
-    
-    <title>Notes on Linux Internals: The Slab Allocator</title>
-    <meta name="description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.">
-    <meta name="keywords" content='linux, memory, kernel'>
-
-    <meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
-    <meta property="og:type" content="website">
-    <meta property="og:title" content="Notes on Linux Internals: The Slab Allocator">
-    <meta property="og:description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.">
-    <meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-    <meta property="og:image:secure_url" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-
-    <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Notes on Linux Internals: The Slab Allocator">
-    <meta name="twitter:description" content="Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.">
-    <meta property="twitter:domain" content="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
-    <meta property="twitter:url" content="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
-    <meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/0074.png">
-
-    
-    <link rel="canonical" href="https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/">
-
-    
-    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/normalize.min.css" media="print">
-
-    
-    <link rel="stylesheet" type="text/css" href="/Qdiv7/css/main.min.css">
-
-    
-    <link id="dark-theme" rel="stylesheet" href="/Qdiv7/css/dark.min.css">
-
-    
-    <script src="/Qdiv7/js/bundle.min.e31fb3a8e820298d549c9d82ba29c119c6634dfd51ffe05887d4b702ce828c0d.js" integrity="sha256-4x&#43;zqOggKY1UnJ2CuinBGcZjTf1R/&#43;BYh9S3As6CjA0="></script>
-
-    
-    
-</head>
-<body>
-        <script>
-            
-            setThemeByUserPref();
-        </script><header class="header">
-    <nav class="header-nav">
-
-        
-        <div class="avatar">
-            <a href="https://mohandacherir.github.io/Qdiv7/">
-                <img src='images/0074.png' alt="avatar">
-            </a>
-        </div>
-        
-
-        <div class="nav-title">
-            <a class="nav-brand" href="https://mohandacherir.github.io/Qdiv7/">Qdiv7</a>
-        </div>
-
-        <div class="nav-links">
-            
-            <div class="nav-link">
-                <a href="https://mohandacherir.github.io/Qdiv7/posts/" aria-label="" > Posts </a>
-            </div>
-            
-            <div class="nav-link">
-                <a href="https://mohandacherir.github.io/Qdiv7/tags/" aria-label="" > Tags </a>
-            </div>
-            
-            <div class="nav-link">
-                <a href="https://github.com/MohandAcherir" aria-label="github" ><span data-feather='github'></span>  </a>
-            </div>
-            
-
-            <span class="nav-icons-divider"></span>
-            <div class="nav-link dark-theme-toggle">
-                <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
-                <a aria-hidden="true" role="switch">
-                    <span class="theme-toggle-icon" data-feather="moon"></span>
-                </a>
-            </div>
-
-            <div class="nav-link" id="hamburger-menu-toggle">
-                <span class="sr-only hamburger-menu-toggle-screen-reader-target">menu</span>
-                <a aria-checked="false" aria-labelledby="hamburger-menu-toggle" id="hamburger-menu-toggle-target" role="switch">
-                    <span data-feather="menu"></span>
-                </a>
-            </div>
-
-            
-            <ul class="nav-hamburger-list visibility-hidden">
-                
-                <li class="nav-item">
-                    <a href="https://mohandacherir.github.io/Qdiv7/posts/" > Posts </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a href="https://mohandacherir.github.io/Qdiv7/tags/" > Tags </a>
-                </li>
-                
-                <li class="nav-item">
-                    <a href="https://github.com/MohandAcherir" ><span data-feather='github'></span>  </a>
-                </li>
-                
-                <li class="nav-item dark-theme-toggle">
-                    <span class="sr-only dark-theme-toggle-screen-reader-target">theme</span>
-                    <a role="switch">
-                        <span class="theme-toggle-icon" data-feather="moon"></span>
-                    </a>
-                </li>
-            </ul>
-
-        </div>
-    </nav>
 </header>
-<main id="content">
-    <div class="post container">
-    <div class="post-header-section">
+
+            <section class="page__body">
+    <header class="content__header">
         <h1>Notes on Linux Internals: The Slab Allocator</h1>
-
-        
-
-        
-	
-	
-	
-	
-        
-
-	
-
-	
-
-	
-          <small role="doc-subtitle">Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.</small>
-	
-
-	
-          <p class="post-date">September 6, 2025
-            | Updated March 20, 2026
-          </p>
-	
-
-        <ul class="post-tags">
-          
-           
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/linux">linux</a></li>
-           
-         
-           
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/memory">memory</a></li>
-           
-         
-           
-             <li class="post-tag"><a href="https://mohandacherir.github.io/Qdiv7/tags/kernel">kernel</a></li>
-           
-         
-        </ul>
-    </div>
-
-    <div class="post-content">
+    </header>
+    <div class="content__body">
         <h2 id="introduction">Introduction</h2>
 <p>This post is some of my early notes on the SLUB allocator.</p>
 <p>The kernel heap allocator is an important component responsible for satisfying allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems, etc. These notes discuss only <code>kmalloc</code> and <code>kmem_cache_alloc*</code>, but there are three main memory allocators used by the kernel:</p>
@@ -199,16 +87,16 @@
 <p><strong>Note:</strong> I&rsquo;m not covering the new sheaves thing for now.</p>
 </blockquote>
 <p>The picture&hellip;.Tadaaa:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// mm/slab.h - v6.15.9
-</span></span></span><span style="display:flex;"><span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">// mm/slab.h - v6.15.9
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">/*
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"> * Slab cache management.
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e"> */</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> kmem_cache {
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifndef CONFIG_SLUB_TINY
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_cpu __percpu <span style="color:#f92672">*</span>cpu_slab;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> kmem_cache_cpu __percpu <span style="color:#f92672">*</span>cpu_slab;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Used for retrieving partial slabs, etc. */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">/* Used for retrieving partial slabs, etc. */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">slab_flags_t</span> flags;
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> min_partial;
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> size;		<span style="color:#75715e">/* Object size including metadata */</span>
@@ -216,12 +104,12 @@
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> reciprocal_value reciprocal_size;
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> offset;		<span style="color:#75715e">/* Free pointer offset */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
-</span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Number of per cpu partial objects to keep around */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">/* Number of per cpu partial objects to keep around */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> cpu_partial;
 </span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Number of per cpu partial slabs to keep around */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> cpu_partial_slabs;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_order_objects oo;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> kmem_cache_order_objects oo;
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>	<span style="color:#75715e">/* Allocation and freeing of slabs */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_order_objects min;
@@ -234,32 +122,32 @@
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>name;		<span style="color:#75715e">/* Name (only for display!) */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> list_head list;		<span style="color:#75715e">/* List of slab caches */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SYSFS
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kobject kobj;		<span style="color:#75715e">/* For sysfs */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> kobject kobj;		<span style="color:#75715e">/* For sysfs */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLAB_FREELIST_HARDENED
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> random;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> random;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_NUMA
-</span></span></span><span style="display:flex;"><span>	<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">/*
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 * Defragmentation by allocating from a remote node.
 </span></span></span><span style="display:flex;"><span><span style="color:#75715e">	 */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> remote_node_defrag_ratio;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLAB_FREELIST_RANDOM
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> <span style="color:#f92672">*</span>random_seq;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> <span style="color:#f92672">*</span>random_seq;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_KASAN_GENERIC
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kasan_cache kasan_info;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> kasan_cache kasan_info;
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_HARDENED_USERCOPY
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> useroffset;	<span style="color:#75715e">/* Usercopy region offset */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> useroffset;	<span style="color:#75715e">/* Usercopy region offset */</span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> usersize;		<span style="color:#75715e">/* Usercopy region size */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache_node <span style="color:#f92672">*</span>node[MAX_NUMNODES];
 </span></span><span style="display:flex;"><span>};
 </span></span></code></pre></div><p>There are many members and each one has its function. Here are the most basic ones:</p>
@@ -277,7 +165,7 @@
 <blockquote>
 <p><strong>Note:</strong> If we pin thread A to CPU 0 and thread B to CPU 1 simultaneously, the first allocates from the slabs cached in CPU 0 and the second from slabs cached in CPU 1.</p>
 </blockquote>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> kmem_cache_cpu {
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> kmem_cache_cpu {
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">union</span> {
 </span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> {
 </span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">void</span> <span style="color:#f92672">**</span>freelist;	<span style="color:#75715e">/* Pointer to next available object */</span>
@@ -287,13 +175,13 @@
 </span></span><span style="display:flex;"><span>	};
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>slab;	<span style="color:#75715e">/* The slab from which we are allocating */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>partial;	<span style="color:#75715e">/* Partially allocated slabs */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>partial;	<span style="color:#75715e">/* Partially allocated slabs */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">local_lock_t</span> lock;	<span style="color:#75715e">/* Protects the fields above */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">local_lock_t</span> lock;	<span style="color:#75715e">/* Protects the fields above */</span>
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_STATS
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> stat[NR_SLUB_STAT_ITEMS];
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">int</span> stat[NR_SLUB_STAT_ITEMS];
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>};
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>};
 </span></span></code></pre></div><ul>
 <li><strong><code>freelist</code></strong>: The fast path (lockless). It points to freed chunks in the <strong>active</strong> slab.</li>
 <li><strong><code>slab</code></strong>: Points to what we call the active slab — the set of pages that contain freed chunks.</li>
@@ -308,27 +196,27 @@
 <p><strong>Note:</strong> &ldquo;the SLAB allocator&rdquo; vs &ldquo;the slab&rdquo; —
 <strong><code>The SLAB allocator</code></strong> is a design/paradigm of memory allocation, whereas <strong><code>the slab</code></strong> is a data structure.</p>
 </blockquote>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* Reuses the bits in struct page */</span>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#75715e">/* Reuses the bits in struct page */</span>
 </span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> slab {
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> __page_flags;
 </span></span><span style="display:flex;"><span>
 </span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> kmem_cache <span style="color:#f92672">*</span>slab_cache; <span style="color:#75715e">// [1]
-</span></span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">union</span> {
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">union</span> {
 </span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">struct</span> {
 </span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">union</span> {
 </span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">struct</span> list_head slab_list; <span style="color:#75715e">// [2]
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
-</span></span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">struct</span> {
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#75715e">#ifdef CONFIG_SLUB_CPU_PARTIAL
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>				<span style="color:#66d9ef">struct</span> {
 </span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">struct</span> slab <span style="color:#f92672">*</span>next; <span style="color:#75715e">// [2.5]
-</span></span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">int</span> slabs;	<span style="color:#75715e">/* Nr of slabs left */</span>
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>					<span style="color:#66d9ef">int</span> slabs;	<span style="color:#75715e">/* Nr of slabs left */</span>
 </span></span><span style="display:flex;"><span>				};
 </span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>			};
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>			};
 </span></span><span style="display:flex;"><span>			<span style="color:#75715e">/* Double-word boundary */</span>
 </span></span><span style="display:flex;"><span>			<span style="color:#66d9ef">union</span> {
 </span></span><span style="display:flex;"><span>				<span style="color:#66d9ef">struct</span> {
 </span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>freelist;	<span style="color:#75715e">// [3]	/* first free object */
-</span></span></span><span style="display:flex;"><span>					<span style="color:#66d9ef">union</span> {
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>					<span style="color:#66d9ef">union</span> {
 </span></span><span style="display:flex;"><span>						<span style="color:#66d9ef">unsigned</span> <span style="color:#66d9ef">long</span> counters;
 </span></span><span style="display:flex;"><span>						<span style="color:#66d9ef">struct</span> {
 </span></span><span style="display:flex;"><span>							<span style="color:#66d9ef">unsigned</span> inuse:<span style="color:#ae81ff">16</span>;
@@ -344,8 +232,8 @@
 </span></span><span style="display:flex;"><span>				};
 </span></span><span style="display:flex;"><span>	};
 </span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
-</span></span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
-</span></span></span><span style="display:flex;"><span>};
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>};
 </span></span></code></pre></div><p>As dense as this structure looks, only a few details are relevant:</p>
 <ul>
 <li><strong>[1]</strong> is a pointer to the cache the slab belongs to.</li>
@@ -359,7 +247,7 @@
 <p>A slab is full when all its elements are allocated; in that case, it becomes untracked by the cache (except in some debug configs). However, when an element of it is freed, the whole slab that the freed object belongs to is placed into a <strong>partial</strong> list. So every non-full slab that is not the active slab is placed into some partial list — either the per-CPU one, or the node one.</p>
 <p><img src="/Qdiv7/images/Linux-Internals-1/Screenshot-4_2.png" alt="timeline"></p>
 <p>Note that the per-CPU list has limits; to verify:</p>
-<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;-webkit-text-size-adjust:none;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>cat /sys/kernel/slab/&lt;cache_name&gt;/cpu_partial
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-shell" data-lang="shell"><span style="display:flex;"><span>cat /sys/kernel/slab/&lt;cache_name&gt;/cpu_partial
 </span></span></code></pre></div><p>This corresponds to the <code>cpu_partial_slabs</code> member in the cache structure.</p>
 <p>If the per-CPU list hits this limit:</p>
 <ol>
@@ -378,55 +266,52 @@
 <a href="https://sam4k.com/linternals-memory-allocators-0x02/">https://sam4k.com/linternals-memory-allocators-0x02/</a><br>
 <a href="https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf">https://events.static.linuxfound.org/sites/events/files/slides/slaballocators-japan-2015.pdf</a></p>
 
-        
     </div>
+    <footer class="content__footer"></footer>
 
-    <div class="prev-next">
-        
-    </div>
+            </section>
 
+            <section class="page__aside">
+                <div class="aside__about">
+<div class="aside__about">
     
     
-    
+<h1 class="about__title">Moe&#39;s VR blog</h1>
+<p class="about__description">Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.</p>
 </div>
 
-<aside class="post-toc">
-    <nav id="toc">
-        <nav id="TableOfContents">
-  <ul>
-    <li><a href="#introduction">Introduction</a></li>
-    <li><a href="#basic-concepts">Basic Concepts</a></li>
-    <li><a href="#per-cpu-slab">Per-CPU Slab</a></li>
-    <li><a href="#the-struct-slab">The <code>struct slab</code></a></li>
-    <li><a href="#partial-lists-and-full-slabs">Partial Lists and Full Slabs</a>
-      <ul>
-        <li><a href="#what-happens-when-you-free-from-a-full-slab">What happens when you free from a full slab?</a></li>
-      </ul>
-    </li>
-    <li><a href="#conclusion">Conclusion</a></li>
-    <li><a href="#references">References</a></li>
-  </ul>
-</nav>
-    </nav>
-</aside>
 
-
-
+<ul class="aside__social-links">
     
-
-        </main><footer class="footer">
+</ul>
+</div>
+                <hr>
+                <div class="aside__content">
+    <p>Early notes on the Linux SLUB allocator: cache structures, per-CPU freelists, slab internals, and the allocation slow path.</p>
     
+        <p>
+            
+            2025-09-06
+        </p>
     
 
     
 
-    
+                </div>
+            </section>
 
-    
+            <footer class="page__footer">
 
-    <span>
-        Made with &#10084;&#65039; using <a target="_blank" href="https://github.com/gokarna-theme/gokarna-hugo">Gokarna</a>
-    </span>
+<p class="language-note">
+  <span>Language:</span>
+  <strong>English</strong>
+</p>
+
+<p class="copyright"></p>
+<p class="advertisement">Powered by <a href="https://gohugo.io/">hugo</a> and <a href="https://github.com/joeroe/risotto">risotto</a>.</p>
 </footer>
-</body>
+
+        </div>
+    </body>
+
 </html>

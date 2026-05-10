@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head><script src="/Qdiv7/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=Qdiv7/livereload" data-no-instant defer></script><title>Scudo Allocator - Internals &ndash; Moe&#39;s VR blog</title>
+<meta name="description" content="Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8"/>
+
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css" integrity="sha512-IW0nhlW5MgNydsXJO40En2EoCkTTjZhI3yuODrZIc8cQ4h1XcF53PsqDHa09NqnkXuIe0Oiyyj171BqZFwISBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/palettes/base16-dark.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/risotto.css">
+<link rel="stylesheet" href="http://localhost:1313/Qdiv7/css/custom.css">
+
+
+
+
+
+
+
+
+
+
+
+
+<meta property="og:title" content="Scudo Allocator - Internals &ndash; Moe&#39;s VR blog" />
+<meta property="og:url" content="http://localhost:1313/Qdiv7/posts/scudo-allocator/" />
+
+  
+    <meta property="og:description" content="Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring."/> 
+  
+
+<meta property="og:locale" content="en" />
+<meta property="og:image" content="" /></head>
+
+    <body>
+        <div class="page">
+
+            <header class="page__header"><nav class="page__nav main-nav">
+    <ul>
+      <li class="nomarker"><h1 class="page__logo"><a href="http://localhost:1313/Qdiv7/" class="page__logo-inner">Moe&#39;s VR blog</a></h1></li>
+    
+    
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/posts/" title="">Posts</a></li>
+    
+    <li class="main-nav__item"><a class="nav-main-item" href="http://localhost:1313/Qdiv7/tags/" title="">Tags</a></li>
+    
+    <li class="main-nav__item"><a class="nav-main-item" href="https://github.com/MohandAcherir" title="">GitHub</a></li>
+    
+    </ul>
+</nav>
+
+</header>
+
+            <section class="page__body">
+    <header class="content__header">
+        <h1>Scudo Allocator - Internals</h1>
+    </header>
+    <div class="content__body">
+        <p>Everybody knows that iOS pwn is (real) hard for userland(and kernel too obviously); but folks, you should know that even Android is catching up now, so don&rsquo;t worry, you can keep your Pixel 18 Pro Max ;-) LOLL</p>
+<p>This post covers the default userland hardened allocator for Android called: <strong>scudo</strong>.</p>
+<p>All pwners, and i fact all Linux users, have worked with the old good glibc&rsquo;s ptmalloc. this one is very documented and there&rsquo;s even an excellent github repo how2heap that illustrates attacks(Houses) on each ptmalloc version. Though, this new allocator is much less documented, although there&rsquo;s some documentation here and there <a href="https://www.l3harris.com/newsroom/editorial/2023/10/scudo-hardened-allocator-unofficial-internals-documentation">link 1</a>, <a href="https://un1fuzz.github.io/articles/scudo_internals.html">link 2</a>, <a href="https://www.synacktiv.com/publications/behind-the-shield-unmasking-scudos-defenses">link 3</a> &amp; <a href="https://nebelwelt.net/files/24WOOT.pdf">link4</a>.
+But these all predate 2024, so in this post i try to give a fresh 2026 take.</p>
+<p>The goal here is not to dump every single source file verbatim, but to rebuild enough of the control flow that the allocator stops feeling like a black box. If you can follow how <code>malloc</code> becomes a primary or secondary allocation, and how <code>free</code> either goes back to a local cache or gets delayed in quarantine, then most of Scudo&rsquo;s higher-level hardening choices start making sense.</p>
+<h2 id="basics"><strong>Basics</strong>:</h2>
+<p>Since Android 11, <strong>Scudo</strong> has become the default allocator, and before that, it was <strong>jemalloc</strong> (<a href="https://source.android.com/docs/security/test/scudo?hl=fr">source</a>). Scudo is a part of LLVM&rsquo;s <a href="https://github.com/llvm/llvm-project/tree/main/compiler-rt/">compiler-rt</a> project, and resides in <code>compiler-rt/lib/scudo/standalone</code>. So let&rsquo;s start digging its functionalities.</p>
+<hr>
+<h2 id="allocation-path----malloc">ALLOCATION PATH  - MALLOC:</h2>
+<p>By retracing the path of how a simple allocation request is made, we can get more intuition on how things work, so let&rsquo;s see how a simple <strong>malloc</strong> is handled:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/wrappers_c.cpp
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#if defined(SCUDO_PREFIX_NAME)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#define SCUDO_PREFIX(name) CONCATENATE(SCUDO_PREFIX_NAME, name)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#define SCUDO_ALLOCATOR_STATIC static
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#else
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#define SCUDO_PREFIX(name) name
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	INTERFACE WEAK <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">SCUDO_PREFIX</span>(malloc)(size_t size) {
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr <span style="color:#f92672">=</span> Allocator.allocate(size, scudo<span style="color:#f92672">::</span>Chunk<span style="color:#f92672">::</span>Origin<span style="color:#f92672">::</span>Malloc,
+</span></span><span style="display:flex;"><span>	                                 SCUDO_MALLOC_ALIGNMENT); <span style="color:#75715e">// [1]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	  reportAllocation(Ptr, size); <span style="color:#75715e">// [2]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	  <span style="color:#66d9ef">return</span> scudo<span style="color:#f92672">::</span>setErrnoOnNull(Ptr);
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>It does two things:
+At <strong>[1]</strong>, <code>Allocator.allocate(...)</code> does the actual allocation and returns a pointer as usual; and at <strong>[2]</strong>  in case flag <code>SCUDO_ENABLE_HOOKS</code> is activated, it tracks this new allocation as the last allocated address.</p>
+<p>That makes <code>wrappers_c.cpp</code> a very thin front-end: the wrapper mostly normalizes the C ABI, then immediately hands control to the real allocator logic in <code>combined.h</code>. In other words, if we want to understand the interesting behavior, almost all roads lead to <code>Allocator.allocate(...)</code>.</p>
+<p>Let&rsquo;s focus on <strong>[1]</strong>; it&rsquo;s a lengthy function, so we go step by step:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/combined.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	NOINLINE <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">allocate</span>(uptr Size, Chunk<span style="color:#f92672">::</span>Origin Origin,
+</span></span><span style="display:flex;"><span>						  uptr Alignment <span style="color:#f92672">=</span> MinAlignment,
+</span></span><span style="display:flex;"><span>						  <span style="color:#66d9ef">bool</span> ZeroContents <span style="color:#f92672">=</span> false) NO_THREAD_SAFETY_ANALYSIS {
+</span></span><span style="display:flex;"><span>	initThreadMaybe(); <span style="color:#75715e">// [1.1]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">/*
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	ALWAYS_INLINE void initThreadMaybe(bool MinimalInit = false) {
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	    TSDRegistry.initThreadMaybe(this, MinimalInit);
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	}
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">	*/</span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span></code></pre></div><h3 id="shared-vs-exculsive-tdss">Shared vs Exculsive TDSs</h3>
+<p>This calls function <code>initThreadMaybe()</code>, which seems to be a method for used by the shared model and also by the exclusive one:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/combined.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	ALWAYS_INLINE <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">initThreadMaybe</span>(<span style="color:#66d9ef">bool</span> MinimalInit <span style="color:#f92672">=</span> false) {
+</span></span><span style="display:flex;"><span>		TSDRegistry.initThreadMaybe(<span style="color:#66d9ef">this</span>, MinimalInit);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/tsd_shared.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	ALWAYS_INLINE <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">initThreadMaybe</span>(Allocator <span style="color:#f92672">*</span>Instance,
+</span></span><span style="display:flex;"><span>									 UNUSED <span style="color:#66d9ef">bool</span> MinimalInit) {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (LIKELY(getCurrentTSD()))
+</span></span><span style="display:flex;"><span>		  <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>		initThread(Instance);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/tsd_exclusive.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	ALWAYS_INLINE <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">initThreadMaybe</span>(Allocator <span style="color:#f92672">*</span>Instance, <span style="color:#66d9ef">bool</span> MinimalInit) {
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">if</span> (LIKELY(State.InitState <span style="color:#f92672">!=</span> ThreadState<span style="color:#f92672">::</span>NotInitialized))
+</span></span><span style="display:flex;"><span>	      <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>	    initThread(Instance, MinimalInit);
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>A global state is maintained as <code>State.InitState</code> and there 3 states:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    NotInitialized <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>    Initialized,
+</span></span><span style="display:flex;"><span>    TornDown,
+</span></span></code></pre></div><p>The initialization is done if it is not <code>ThreadState::NotInitialized</code>;
+<code>TSDregisteryExT</code> maintains a global state member <code>static thread_local ThreadState State;</code> which is common to all procecess / Threads and allocation. The comment in following <code>initThread(...)</code> confirms that:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/tsd_exclusive.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// Using minimal initialization allows for global initialization while keeping
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// the thread specific structure untouched. The fallback structure will be
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// used instead.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	NOINLINE <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">initThread</span>(Allocator <span style="color:#f92672">*</span>Instance, <span style="color:#66d9ef">bool</span> MinimalInit) {
+</span></span><span style="display:flex;"><span>		initOnceMaybe(Instance);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">if</span> (UNLIKELY(MinimalInit)) <span style="color:#75715e">// [3]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		  <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>		CHECK_EQ(
+</span></span><span style="display:flex;"><span>			pthread_setspecific(PThreadKey, <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">void</span> <span style="color:#f92672">*&gt;</span>(Instance)), <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>		ThreadTSD.init(Instance);
+</span></span><span style="display:flex;"><span>		State.InitState <span style="color:#f92672">=</span> ThreadState<span style="color:#f92672">::</span>Initialized;
+</span></span><span style="display:flex;"><span>		Instance<span style="color:#f92672">-&gt;</span>callPostInitCallback();
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>Only a minimal init is done when <code>MinimalInit</code> is set; as the comment says, the global heap initialization. &hellip;</p>
+<p>There&rsquo;s a fallbackTSD, a thread local TSD for each thread:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  TSD<span style="color:#f92672">&lt;</span>Allocator<span style="color:#f92672">&gt;</span> FallbackTSD; <span style="color:#75715e">// &lt;-----------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  HybridMutex Mutex;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">thread_local</span> ThreadState State;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">thread_local</span> TSD<span style="color:#f92672">&lt;</span>Allocator<span style="color:#f92672">&gt;</span> ThreadTSD; <span style="color:#75715e">// &lt;-------------
+</span></span></span></code></pre></div><p>The global shared <code>TSDRegistrySharedT</code> holds an array <code>TSD&lt;Allocator&gt; TSDs[TSDsArraySize];</code> where each TSD has its allocator <code>SizeClassAllocator</code> and its <code>QuarantineCache</code> assigned to the current chosen allocator and Quarantine.</p>
+<p>The exclusive one  <code>TSDRegistryExT</code> holds object  <code>static thread_local TSD&lt;Allocator&gt; ThreadTSD;</code></p>
+<p>Now, if scudo is build with flag <code>SCUDO_ANDROID</code>, we get the following parameters:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// scudo/standalone/allocator_config.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AndroidConfig</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">bool</span> MaySupportMemoryTagging <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">A</span><span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">using</span> TSDRegistryT <span style="color:#f92672">=</span> TSDRegistrySharedT<span style="color:#f92672">&lt;</span>A, <span style="color:#ae81ff">8U</span>, <span style="color:#ae81ff">2U</span><span style="color:#f92672">&gt;</span>; <span style="color:#75715e">// Shared, max 8 TSDs.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Primary</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">using</span> SizeClassMap <span style="color:#f92672">=</span> AndroidSizeClassMap;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#if SCUDO_CAN_USE_PRIMARY64
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr RegionSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">28U</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">typedef</span> u32 CompactPtrT;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr CompactPtrScale <span style="color:#f92672">=</span> SCUDO_MIN_ALIGNMENT_LOG;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr GroupSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">20U</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">bool</span> EnableRandomOffset <span style="color:#f92672">=</span> true;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr MapSizeIncrement <span style="color:#f92672">=</span> <span style="color:#ae81ff">1UL</span> <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">18</span>;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#else
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr RegionSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">18U</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr GroupSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">18U</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">typedef</span> uptr CompactPtrT;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> s32 MinReleaseToOsIntervalMs <span style="color:#f92672">=</span> <span style="color:#ae81ff">1000</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> s32 MaxReleaseToOsIntervalMs <span style="color:#f92672">=</span> <span style="color:#ae81ff">1000</span>;
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#if SCUDO_CAN_USE_PRIMARY64
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span> <span style="color:#66d9ef">using</span> PrimaryT <span style="color:#f92672">=</span> SizeClassAllocator64<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#else
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span> <span style="color:#66d9ef">using</span> PrimaryT <span style="color:#f92672">=</span> SizeClassAllocator32<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Secondary</span> {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">Cache</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> u32 EntriesArraySize <span style="color:#f92672">=</span> <span style="color:#ae81ff">256U</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> u32 QuarantineSize <span style="color:#f92672">=</span> <span style="color:#ae81ff">32U</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> u32 DefaultMaxEntriesCount <span style="color:#f92672">=</span> <span style="color:#ae81ff">32U</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr DefaultMaxEntrySize <span style="color:#f92672">=</span> <span style="color:#ae81ff">2UL</span> <span style="color:#f92672">&lt;&lt;</span> <span style="color:#ae81ff">20</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> s32 MinReleaseToOsIntervalMs <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> s32 MaxReleaseToOsIntervalMs <span style="color:#f92672">=</span> <span style="color:#ae81ff">1000</span>;
+</span></span><span style="display:flex;"><span>    };
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span> <span style="color:#66d9ef">using</span> CacheT <span style="color:#f92672">=</span> MapAllocatorCache<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span> <span style="color:#66d9ef">using</span> SecondaryT <span style="color:#f92672">=</span> MapAllocator<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;</span>;
+</span></span><span style="display:flex;"><span>};
+</span></span></code></pre></div><p>So on Android systems,  the shared TSD is used. Otherwise, in the default configuration, the exclusive one is used.</p>
+<hr>
+<p>Continuing on the allocation path:</p>
+<p>At a high level, Scudo has two backends. The <strong>primary</strong> allocator is the fast path for &ldquo;normal&rdquo; allocations that fit into pre-defined size classes. The <strong>secondary</strong> allocator is the fallback for requests that are too large, too awkwardly aligned, or otherwise do not fit cleanly in the primary class-based design. So before reading the code line by line, it helps to keep this split in mind: small and common requests try to stay in the primary, while large and exceptional ones end up in the secondary.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> Options Options <span style="color:#f92672">=</span> Primary.Options.load();
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (UNLIKELY(Alignment <span style="color:#f92672">&gt;</span> MaxAlignment)) { <span style="color:#75715e">// Check alignment
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">if</span> (Options.get(OptionBit<span style="color:#f92672">::</span>MayReturnNull))
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>      reportAlignmentTooBig(Alignment, MaxAlignment);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (Alignment <span style="color:#f92672">&lt;</span> MinAlignment)
+</span></span><span style="display:flex;"><span>      Alignment <span style="color:#f92672">=</span> MinAlignment;
+</span></span></code></pre></div><p>It checks the alignment although the <code>Alignment</code> parameter is a hardcoded constant, so at least for <code>malloc</code> this won&rsquo;t fail; But for some other cases, in case alignment is bigger than the maximum allowed,  if the <code>OptionBit::MayReturnNull</code> is set to true, the allocation returns a NULL pointer.</p>
+<p>A step further, if scudo is build with flag <code>GWP_ASAN_HOOKS</code>, it allocates guarded chunks, as the name suggest <code>*ASAN</code> which stands for AddressSanitizer.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">#ifdef GWP_ASAN_HOOKS
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">if</span> (UNLIKELY(GuardedAlloc.shouldSample())) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr <span style="color:#f92672">=</span> GuardedAlloc.allocate(Size, Alignment)) {
+</span></span><span style="display:flex;"><span>        Stats.lock();
+</span></span><span style="display:flex;"><span>        Stats.add(StatAllocated, GuardedAllocSlotSize);
+</span></span><span style="display:flex;"><span>        Stats.sub(StatFree, GuardedAllocSlotSize);
+</span></span><span style="display:flex;"><span>        Stats.unlock();
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> Ptr;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#endif </span><span style="color:#75715e">// GWP_ASAN_HOOKS
+</span></span></span></code></pre></div><p>This part is not Scudo proper, but it is part of the real allocation path on builds that enable it, so it is still relevant. GWP-ASan is a sampling-based mitigation: instead of instrumenting every allocation like a traditional sanitizer build, it only diverts a small subset of allocations into specially guarded slots. That makes it cheap enough for production-like environments while still catching some heap bugs with strong signal when a sampled chunk gets hit.</p>
+<p>Next up, it checks the filling options and the requested size alignment and limits:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> FillContentsMode FillContents <span style="color:#f92672">=</span> ZeroContents <span style="color:#f92672">?</span> ZeroFill
+</span></span><span style="display:flex;"><span>                                          : TSDRegistry.getDisableMemInit()
+</span></span><span style="display:flex;"><span>                                              <span style="color:#f92672">?</span> NoFill
+</span></span><span style="display:flex;"><span>                                              : Options.getFillContentsMode();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// If the requested size happens to be 0 (more common than you might think),
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// allocate MinAlignment bytes on top of the header. Then add the extra
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// bytes required to fulfill the alignment requirements: we allocate enough
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// to be sure that there will be an address in the block that will satisfy
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// the alignment.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> uptr NeededSize <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>        roundUp(Size, MinAlignment) <span style="color:#f92672">+</span>
+</span></span><span style="display:flex;"><span>        ((Alignment <span style="color:#f92672">&gt;</span> MinAlignment) <span style="color:#f92672">?</span> Alignment : Chunk<span style="color:#f92672">::</span>getHeaderSize());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// Takes care of extravagantly large sizes as well as integer overflows.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">static_assert</span>(MaxAllowedMallocSize <span style="color:#f92672">&lt;</span> UINTPTR_MAX <span style="color:#f92672">-</span> MaxAlignment, <span style="color:#e6db74">&#34;&#34;</span>);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (UNLIKELY(Size <span style="color:#f92672">&gt;=</span> MaxAllowedMallocSize)) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (Options.get(OptionBit<span style="color:#f92672">::</span>MayReturnNull))
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span></code></pre></div><p>The <code>NeededSize</code> computation is worth slowing down for, because this is where the user-visible <code>size</code> stops being the allocator&rsquo;s real internal size. Scudo rounds up the request, accounts for the hidden chunk header, and may reserve extra headroom so that the final returned pointer can satisfy alignment constraints without exposing allocator metadata to the caller.</p>
+<hr>
+<h3 id="primary-allocator">Primary Allocator:</h3>
+<p><img src="/Qdiv7/images/scudo/Screenshot-4.png" alt="alloc"></p>
+<p>Now, we get to the actual allocation:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Block <span style="color:#f92672">=</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>    uptr ClassId <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    uptr SecondaryBlockEnd <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (LIKELY(PrimaryT<span style="color:#f92672">::</span>canAllocate(NeededSize))) { <span style="color:#75715e">// [5]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      ClassId <span style="color:#f92672">=</span> SizeClassMap<span style="color:#f92672">::</span>getClassIdBySize(NeededSize);
+</span></span><span style="display:flex;"><span>      DCHECK_NE(ClassId, <span style="color:#ae81ff">0U</span>);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">typename</span> TSDRegistryT<span style="color:#f92672">::</span>ScopedTSD TSD(TSDRegistry); <span style="color:#75715e">// [5.5]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      Block <span style="color:#f92672">=</span> TSD<span style="color:#f92672">-&gt;</span>getSizeClassAllocator().allocate(ClassId);
+</span></span><span style="display:flex;"><span>      <span style="color:#75715e">// If the allocation failed, retry in each successively larger class until
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#75715e">// it fits. If it fails to fit in the largest class, fallback to the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#75715e">// Secondary.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      <span style="color:#66d9ef">if</span> (UNLIKELY(<span style="color:#f92672">!</span>Block)) { <span style="color:#75715e">// [6]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>        <span style="color:#66d9ef">while</span> (ClassId <span style="color:#f92672">&lt;</span> SizeClassMap<span style="color:#f92672">::</span>LargestClassId <span style="color:#f92672">&amp;&amp;</span> <span style="color:#f92672">!</span>Block)
+</span></span><span style="display:flex;"><span>          Block <span style="color:#f92672">=</span> TSD<span style="color:#f92672">-&gt;</span>getSizeClassAllocator().allocate(<span style="color:#f92672">++</span>ClassId);
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>Block)
+</span></span><span style="display:flex;"><span>          ClassId <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (UNLIKELY(ClassId <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>)) {
+</span></span><span style="display:flex;"><span>      Block <span style="color:#f92672">=</span> Secondary.allocate(Options, Size, Alignment, <span style="color:#f92672">&amp;</span>SecondaryBlockEnd,
+</span></span><span style="display:flex;"><span>                                 FillContents);
+</span></span><span style="display:flex;"><span>    }
+</span></span></code></pre></div><p>At <strong>[5]</strong>, the <code>NeededSize</code> requested by the user is checked against <code>SizeClassMap::MaxSize</code>:
+On Android,</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// scudo/standalone/size_class_map.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr MaxSize <span style="color:#f92672">=</span> (<span style="color:#ae81ff">1UL</span> <span style="color:#f92672">&lt;&lt;</span> Config<span style="color:#f92672">::</span>MaxSizeLog) <span style="color:#f92672">+</span> Config<span style="color:#f92672">::</span>SizeDelta;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">class</span> <span style="color:#a6e22e">FixedSizeClassMap</span> <span style="color:#f92672">:</span> <span style="color:#66d9ef">public</span> SizeClassMapBase<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;</span> {
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">AndroidSizeClassConfig</span> {
+</span></span><span style="display:flex;"><span><span style="color:#75715e">#if SCUDO_WORDSIZE == 64U
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr NumBits <span style="color:#f92672">=</span> <span style="color:#ae81ff">7</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr MinSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">4</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr MidSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">6</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr MaxSizeLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">16</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> u16 MaxNumCachedHint <span style="color:#f92672">=</span> <span style="color:#ae81ff">13</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr MaxBytesCachedLog <span style="color:#f92672">=</span> <span style="color:#ae81ff">13</span>;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">constexpr</span> uptr Classes[] <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x00020</span>, <span style="color:#ae81ff">0x00030</span>, <span style="color:#ae81ff">0x00040</span>, <span style="color:#ae81ff">0x00050</span>, <span style="color:#ae81ff">0x00060</span>, <span style="color:#ae81ff">0x00070</span>, <span style="color:#ae81ff">0x00090</span>, <span style="color:#ae81ff">0x000b0</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x000c0</span>, <span style="color:#ae81ff">0x000e0</span>, <span style="color:#ae81ff">0x00120</span>, <span style="color:#ae81ff">0x00160</span>, <span style="color:#ae81ff">0x001c0</span>, <span style="color:#ae81ff">0x00250</span>, <span style="color:#ae81ff">0x00320</span>, <span style="color:#ae81ff">0x00450</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x00670</span>, <span style="color:#ae81ff">0x00830</span>, <span style="color:#ae81ff">0x00a10</span>, <span style="color:#ae81ff">0x00c30</span>, <span style="color:#ae81ff">0x01010</span>, <span style="color:#ae81ff">0x01210</span>, <span style="color:#ae81ff">0x01bd0</span>, <span style="color:#ae81ff">0x02210</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x02d90</span>, <span style="color:#ae81ff">0x03790</span>, <span style="color:#ae81ff">0x04010</span>, <span style="color:#ae81ff">0x04810</span>, <span style="color:#ae81ff">0x05a10</span>, <span style="color:#ae81ff">0x07310</span>, <span style="color:#ae81ff">0x08210</span>, <span style="color:#ae81ff">0x10010</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">const</span> uptr SizeDelta <span style="color:#f92672">=</span> <span style="color:#ae81ff">16</span>;
+</span></span></code></pre></div><p>Again at [5] :</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">bool</span> <span style="color:#a6e22e">canAllocate</span>(uptr Size) { <span style="color:#66d9ef">return</span> Size <span style="color:#f92672">&lt;=</span> SizeClassMap<span style="color:#f92672">::</span>MaxSize; }
+</span></span></code></pre></div><p>So if <code>NeededSize &lt;= (1UL &lt;&lt; Config::MaxSizeLog) + Config::SizeDelta;</code>,  i.e.
+<code>NeededSize &lt;= 2**16 + 16 == 65552 bytes</code>. OK&hellip;
+So i case [5] is true, scudo uses the primary allocator to allocate the chunk from; next up, it grabs the ClassId  <code>ClassId = SizeClassMap::getClassIdBySize(NeededSize);</code></p>
+<p>This is one of the core ideas of Scudo&rsquo;s fast path: user requests are not managed as arbitrary byte lengths, but are first projected onto a discrete set of size classes. Once that mapping is done, the allocator only has to reason in terms of &ldquo;give me one free block for class X&rdquo;, which is much easier to cache and much faster to serve than a general-purpose variable-sized allocator path.</p>
+<p>At <strong>[5.5]</strong>, the <strong>primary</strong> allocator is initialized:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/combined.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// The Cache must be provided zero-initialized.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">initAllocator</span>(SizeClassAllocatorT <span style="color:#f92672">*</span>SizeClassAllocator) {
+</span></span><span style="display:flex;"><span>    SizeClassAllocator<span style="color:#f92672">-&gt;</span>init(<span style="color:#f92672">&amp;</span>Stats, <span style="color:#f92672">&amp;</span>Primary);
+</span></span><span style="display:flex;"><span>  }
+</span></span></code></pre></div><p>and allocates from it:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/size_class_allocator.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// For SizeClassAllocatorLocalCache: Allocates from Local Cache
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">allocate</span>(uptr ClassId) {
+</span></span><span style="display:flex;"><span>	    DCHECK_LT(ClassId, NumClasses);
+</span></span><span style="display:flex;"><span>	    PerClass <span style="color:#f92672">*</span>C <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>PerClassArray[ClassId];
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">if</span> (C<span style="color:#f92672">-&gt;</span>Count <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) {
+</span></span><span style="display:flex;"><span>	      <span style="color:#75715e">// Refill half of the number of max cached.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	      DCHECK_GT(C<span style="color:#f92672">-&gt;</span>MaxCount <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>, <span style="color:#ae81ff">0U</span>);
+</span></span><span style="display:flex;"><span>	      <span style="color:#66d9ef">if</span> (UNLIKELY(<span style="color:#f92672">!</span>refill(C, ClassId, C<span style="color:#f92672">-&gt;</span>MaxCount <span style="color:#f92672">/</span> <span style="color:#ae81ff">2</span>)))
+</span></span><span style="display:flex;"><span>	        <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>	      DCHECK_GT(C<span style="color:#f92672">-&gt;</span>Count, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	    }
+</span></span><span style="display:flex;"><span>	    <span style="color:#75715e">// We read ClassSize first before accessing Chunks because it&#39;s adjacent to
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	    <span style="color:#75715e">// Count, while Chunks might be further off (depending on Count). That keeps
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	    <span style="color:#75715e">// the memory accesses in close quarters.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	    <span style="color:#66d9ef">const</span> uptr ClassSize <span style="color:#f92672">=</span> C<span style="color:#f92672">-&gt;</span>ClassSize;
+</span></span><span style="display:flex;"><span>	    CompactPtrT CompactP <span style="color:#f92672">=</span> C<span style="color:#f92672">-&gt;</span>Chunks[<span style="color:#f92672">--</span>C<span style="color:#f92672">-&gt;</span>Count];
+</span></span><span style="display:flex;"><span>	    Stats.add(StatAllocated, ClassSize);
+</span></span><span style="display:flex;"><span>	    Stats.sub(StatFree, ClassSize);
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">return</span> Allocator<span style="color:#f92672">-&gt;</span>decompactPtr(ClassId, CompactP);
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// For SizeClassAllocatorNoCache : Non Cached
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">allocate</span>(uptr ClassId) {
+</span></span><span style="display:flex;"><span>	    CompactPtrT CompactPtr;
+</span></span><span style="display:flex;"><span>	    uptr NumBlocksPopped <span style="color:#f92672">=</span> Allocator<span style="color:#f92672">-&gt;</span>popBlocks(<span style="color:#66d9ef">this</span>, ClassId, <span style="color:#f92672">&amp;</span>CompactPtr, <span style="color:#ae81ff">1U</span>);
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">if</span> (NumBlocksPopped <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>)
+</span></span><span style="display:flex;"><span>	      <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>	    DCHECK_EQ(NumBlocksPopped, <span style="color:#ae81ff">1U</span>);
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">const</span> PerClass <span style="color:#f92672">*</span>C <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>PerClassArray[ClassId];
+</span></span><span style="display:flex;"><span>	    Stats.add(StatAllocated, C<span style="color:#f92672">-&gt;</span>ClassSize);
+</span></span><span style="display:flex;"><span>	    Stats.sub(StatFree, C<span style="color:#f92672">-&gt;</span>ClassSize);
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">return</span> Allocator<span style="color:#f92672">-&gt;</span>decompactPtr(ClassId, CompactPtr);
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>In case the allocation is <strong>cached</strong>, each class is represented by an instance this structure:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#75715e">// sanitizer_common/sanitizer_allocator_local_cache.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">PerClass</span> {
+</span></span><span style="display:flex;"><span>    u32 count;
+</span></span><span style="display:flex;"><span>    u32 max_count;
+</span></span><span style="display:flex;"><span>    uptr class_size;
+</span></span><span style="display:flex;"><span>    CompactPtrT chunks[<span style="color:#ae81ff">2</span> <span style="color:#f92672">*</span> SizeClassMap<span style="color:#f92672">::</span>kMaxNumCachedHint];
+</span></span><span style="display:flex;"><span>  };
+</span></span></code></pre></div><ul>
+<li><code>Count</code>: the number of available free chunks.</li>
+<li><code>max_count</code>: maximum free chunks the class can hold.</li>
+<li><code>class_size</code> : size of the chunks, e.g: 0x20, 0x50 or 0x1010 &hellip;etc.</li>
+<li><code>chunks</code> : the array that holds the compressed addresses of the chunks.</li>
+</ul>
+<p>Notice that here that allocations are selected like in a stack, with <code>C-&gt;Count</code> as a counter and an index at the same time that is decremented as a new allocation is made.
+So this tiny per-class cache is effectively the hot front-end of the primary allocator..</p>
+<p>But if the allocation fails, at [6] the allocation procedure loops over all the classes
+( for Android 64bits ):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#66d9ef">static</span> <span style="color:#66d9ef">constexpr</span> uptr Classes[] <span style="color:#f92672">=</span> {
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x00020</span>, <span style="color:#ae81ff">0x00030</span>, <span style="color:#ae81ff">0x00040</span>, <span style="color:#ae81ff">0x00050</span>, <span style="color:#ae81ff">0x00060</span>, <span style="color:#ae81ff">0x00070</span>, <span style="color:#ae81ff">0x00090</span>, <span style="color:#ae81ff">0x000b0</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x000c0</span>, <span style="color:#ae81ff">0x000e0</span>, <span style="color:#ae81ff">0x00120</span>, <span style="color:#ae81ff">0x00160</span>, <span style="color:#ae81ff">0x001c0</span>, <span style="color:#ae81ff">0x00250</span>, <span style="color:#ae81ff">0x00320</span>, <span style="color:#ae81ff">0x00450</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x00670</span>, <span style="color:#ae81ff">0x00830</span>, <span style="color:#ae81ff">0x00a10</span>, <span style="color:#ae81ff">0x00c30</span>, <span style="color:#ae81ff">0x01010</span>, <span style="color:#ae81ff">0x01210</span>, <span style="color:#ae81ff">0x01bd0</span>, <span style="color:#ae81ff">0x02210</span>,
+</span></span><span style="display:flex;"><span>      <span style="color:#ae81ff">0x02d90</span>, <span style="color:#ae81ff">0x03790</span>, <span style="color:#ae81ff">0x04010</span>, <span style="color:#ae81ff">0x04810</span>, <span style="color:#ae81ff">0x05a10</span>, <span style="color:#ae81ff">0x07310</span>, <span style="color:#ae81ff">0x08210</span>, <span style="color:#ae81ff">0x10010</span>,
+</span></span><span style="display:flex;"><span>  };
+</span></span></code></pre></div><p>Until the allocation succeeds, or classes ran out; in the latter case, the secondary allocator will be used;</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">if</span> (UNLIKELY(ClassId <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>)) {
+</span></span><span style="display:flex;"><span>      Block <span style="color:#f92672">=</span> Secondary.allocate(Options, Size, Alignment, <span style="color:#f92672">&amp;</span>SecondaryBlockEnd,
+</span></span><span style="display:flex;"><span>                                 FillContents);
+</span></span></code></pre></div><p>Last step,</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> uptr UserPtr <span style="color:#f92672">=</span> roundUp(
+</span></span><span style="display:flex;"><span>        <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span>uptr<span style="color:#f92672">&gt;</span>(Block) <span style="color:#f92672">+</span> Chunk<span style="color:#f92672">::</span>getHeaderSize(), Alignment);
+</span></span><span style="display:flex;"><span>        
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">const</span> uptr SizeOrUnusedBytes <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>        ClassId <span style="color:#f92672">?</span> Size : SecondaryBlockEnd <span style="color:#f92672">-</span> (UserPtr <span style="color:#f92672">+</span> Size);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (LIKELY(<span style="color:#f92672">!</span>useMemoryTagging<span style="color:#f92672">&lt;</span>AllocatorConfig<span style="color:#f92672">&gt;</span>(Options))) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">initChunk</span>(ClassId, Origin, Block, UserPtr, SizeOrUnusedBytes,
+</span></span><span style="display:flex;"><span>                       FillContents); <span style="color:#75715e">// &lt;------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">initChunkWithMemoryTagging</span>(ClassId, Origin, Block, UserPtr, Size,
+</span></span><span style="display:flex;"><span>                                      SizeOrUnusedBytes, FillContents);
+</span></span></code></pre></div><p>The pointer <code>UserPtr</code> to get returned is incremented by the header&rsquo;s size(so that the user doesn&rsquo;t overwrite them obviously), and then there&rsquo;s MTE tagging part that  i&rsquo;ll get to later.</p>
+<p>At last, the chunk is initialized using :</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (LIKELY(<span style="color:#f92672">!</span>useMemoryTagging<span style="color:#f92672">&lt;</span>AllocatorConfig<span style="color:#f92672">&gt;</span>(Options))) {
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#a6e22e">initChunk</span>(ClassId, Origin, Block, UserPtr, SizeOrUnusedBytes,
+</span></span><span style="display:flex;"><span>                       FillContents);
+</span></span><span style="display:flex;"><span>    }
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    Header.ClassId <span style="color:#f92672">=</span> ClassId <span style="color:#f92672">&amp;</span> Chunk<span style="color:#f92672">::</span>ClassIdMask;
+</span></span><span style="display:flex;"><span>    Header.State <span style="color:#f92672">=</span> Chunk<span style="color:#f92672">::</span>State<span style="color:#f92672">::</span>Allocated;
+</span></span><span style="display:flex;"><span>    Header.setOrigin(Origin);
+</span></span><span style="display:flex;"><span>    Header.SizeOrUnusedBytes <span style="color:#f92672">=</span> SizeOrUnusedBytes <span style="color:#f92672">&amp;</span> Chunk<span style="color:#f92672">::</span>SizeOrUnusedBytesMask;
+</span></span><span style="display:flex;"><span>    Chunk<span style="color:#f92672">::</span>storeHeader(Cookie, <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">void</span> <span style="color:#f92672">*&gt;</span>(addHeaderTag(UserPtr)),
+</span></span><span style="display:flex;"><span>                       <span style="color:#f92672">&amp;</span>Header);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">void</span> <span style="color:#f92672">*&gt;</span>(UserPtr);
+</span></span></code></pre></div><p>By the time <code>initChunk(...)</code> returns, Scudo has converted a raw backend block into something with allocator-owned metadata and an explicit state transition. The stored header ties that user pointer back to its size class, origin, and size information, which is what later lets <code>free</code> validate and route the chunk correctly.</p>
+<h3 id="secondary-allocator">Secondary Allocator:</h3>
+<p>The secondary allocator is the &ldquo;not worth squeezing into a size class&rdquo; backend. In practice, it handles requests that exceed the primary cutoff and often ends up relying more directly on page-level mappings. This is slower than the primary fast path, but it avoids forcing huge or unusual allocations into data structures that were optimized for small fixed-size blocks.</p>
+<hr>
+<h3 id="regions">Regions:</h3>
+<p><img src="/Qdiv7/images/scudo/Screenshot-1.png" alt="alloc"></p>
+<p>Each <strong>ClassId</strong> has backing memory called a <strong>region</strong>; It is presented by an object <code>RegionInfo</code> that holds a pointer to groups of <strong>batches</strong> where this class refills it chunks from; each region is of size <code>2^RegionSizeLog</code>. For each class its correspondent Region is stored in array <code>RegionInfoArray</code> and has a getter:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/primary64.h 
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	RegionInfo <span style="color:#f92672">*</span><span style="color:#a6e22e">getRegionInfo</span>(uptr ClassId) {
+</span></span><span style="display:flex;"><span>		DCHECK_LT(ClassId, NumClasses);
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">return</span> <span style="color:#f92672">&amp;</span>RegionInfoArray[ClassId]; <span style="color:#75715e">// &lt;-----
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	}
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// From the sources comments
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// SizeClassAllocator64 is an allocator tuned for 64-bit address space.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// It starts by reserving NumClasses * 2^RegionSizeLog bytes, equally divided in
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Regions, specific to each size class. Note that the base of that mapping is
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// random (based to the platform specific map() capabilities). If
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// PrimaryEnableRandomOffset is set, each Region actually starts at a random
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// offset from its base.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">//
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// Regions are mapped incrementally on demand to fulfill allocation requests,
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// those mappings being split into equally sized Blocks based on the size class
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// they belong to. The Blocks created are shuffled to prevent predictable
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// address patterns (the predictability increases with the size of the Blocks).
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">//
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The 1st Region (for size class 0) holds the Batches. This is a
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// structure used to transfer arrays of available pointers from the class size
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// freelist to the thread specific freelist, and back.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">//
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// The memory used by this allocator is never unmapped, but can be partially
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e">// released if the platform allows for it.
+</span></span></span></code></pre></div><p>The easiest mental model for a region is: &ldquo;the long-lived backing area for one size class&rdquo;. Instead of mixing all block sizes together, Scudo reserves a dedicated region for each class and carves it into equal-sized blocks on demand. That keeps metadata localized, simplifies accounting, and makes allocation/free behavior more regular than in classic allocators that freely interleave differently sized chunks in the same arenas.</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/primary64.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">UnpaddedRegionInfo</span> {
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Mutex for operations on freelist
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		HybridMutex FLLock;
+</span></span><span style="display:flex;"><span>		ConditionVariableT FLLockCV <span style="color:#a6e22e">GUARDED_BY</span>(FLLock);
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// Mutex for memmap operations
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		HybridMutex MMLock <span style="color:#a6e22e">ACQUIRED_BEFORE</span>(FLLock);
+</span></span><span style="display:flex;"><span>		<span style="color:#75715e">// `RegionBeg` is initialized before thread creation and won&#39;t be changed.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>		uptr RegionBeg <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>		u32 RandState <span style="color:#a6e22e">GUARDED_BY</span>(MMLock) <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>		BlocksInfo FreeListInfo <span style="color:#a6e22e">GUARDED_BY</span>(FLLock);
+</span></span><span style="display:flex;"><span>		PagesInfo MemMapInfo <span style="color:#a6e22e">GUARDED_BY</span>(MMLock);
+</span></span><span style="display:flex;"><span>		ReleaseToOsInfo ReleaseInfo <span style="color:#a6e22e">GUARDED_BY</span>(MMLock) <span style="color:#f92672">=</span> {};
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">bool</span> Exhausted <span style="color:#a6e22e">GUARDED_BY</span>(MMLock) <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">bool</span> isPopulatingFreeList <span style="color:#a6e22e">GUARDED_BY</span>(FLLock) <span style="color:#f92672">=</span> false;
+</span></span><span style="display:flex;"><span>	};
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">RegionInfo</span> <span style="color:#f92672">:</span> UnpaddedRegionInfo {
+</span></span><span style="display:flex;"><span>		<span style="color:#66d9ef">char</span> Padding[SCUDO_CACHE_LINE_SIZE <span style="color:#f92672">-</span>
+</span></span><span style="display:flex;"><span>					 (<span style="color:#66d9ef">sizeof</span>(UnpaddedRegionInfo) <span style="color:#f92672">%</span> SCUDO_CACHE_LINE_SIZE)] <span style="color:#f92672">=</span> {};
+</span></span><span style="display:flex;"><span>	};
+</span></span></code></pre></div><p>Each region has a <code>BlocksInfo FreeListInfo</code> member that holds information about the free blocks  in the region, and tracks <code>PushedBlocks</code>/ <code>PoppedBlocks</code>:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#66d9ef">struct</span> <span style="color:#a6e22e">BlocksInfo</span> {
+</span></span><span style="display:flex;"><span>		SinglyLinkedList<span style="color:#f92672">&lt;</span>BatchGroupT<span style="color:#f92672">&gt;</span> BlockList <span style="color:#f92672">=</span> {};
+</span></span><span style="display:flex;"><span>		uptr PoppedBlocks <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>		uptr PushedBlocks <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>;
+</span></span><span style="display:flex;"><span>	};
+</span></span></code></pre></div><p><code>uptr RegionBeg</code> that holds a randomized beginning address to increase security <code>EnableRandomOffset</code> is set true.</p>
+<p><img src="/Qdiv7/images/scudo/Screenshot-3.png" alt="alloc"></p>
+<p><code>MemMapInfo</code> holds the information about the region mapping in the process.</p>
+<p>That random offset matters because even though a region is conceptually &ldquo;the area for class X&rdquo;, Scudo does not want the actual block layout to become too predictable across runs. Small layout perturbations are not a silver bullet, but they do raise the cost of exploits.</p>
+<p>Here&rsquo;s the initialization procedure:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// scudo/standalone/primary64.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#66d9ef">void</span> SizeClassAllocator64<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;::</span>initRegion(RegionInfo <span style="color:#f92672">*</span>Region, uptr ClassId,
+</span></span><span style="display:flex;"><span>                                              MemMapT MemMap,
+</span></span><span style="display:flex;"><span>                                              <span style="color:#66d9ef">bool</span> EnableRandomOffset)
+</span></span><span style="display:flex;"><span>    REQUIRES(Region<span style="color:#f92672">-&gt;</span>MMLock) {
+</span></span><span style="display:flex;"><span>  DCHECK(<span style="color:#f92672">!</span>Region<span style="color:#f92672">-&gt;</span>MemMapInfo.MemMap.isAllocated());
+</span></span><span style="display:flex;"><span>  DCHECK(MemMap.isAllocated());
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> uptr PageSize <span style="color:#f92672">=</span> getPageSizeCached();
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  Region<span style="color:#f92672">-&gt;</span>MemMapInfo.MemMap <span style="color:#f92672">=</span> MemMap;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  Region<span style="color:#f92672">-&gt;</span>RegionBeg <span style="color:#f92672">=</span> MemMap.getBase();
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (EnableRandomOffset) {
+</span></span><span style="display:flex;"><span>    Region<span style="color:#f92672">-&gt;</span>RegionBeg <span style="color:#f92672">+=</span> (getRandomModN(<span style="color:#f92672">&amp;</span>Region<span style="color:#f92672">-&gt;</span>RandState, <span style="color:#ae81ff">16</span>) <span style="color:#f92672">+</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">*</span> PageSize;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">const</span> uptr BlockSize <span style="color:#f92672">=</span> getSizeByClassId(ClassId);
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// Releasing small blocks is expensive, set a higher threshold to avoid
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// frequent page releases.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">if</span> (isSmallBlock(BlockSize)) {
+</span></span><span style="display:flex;"><span>    Region<span style="color:#f92672">-&gt;</span>ReleaseInfo.TryReleaseThreshold <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>        PageSize <span style="color:#f92672">*</span> SmallerBlockReleasePageDelta;
+</span></span><span style="display:flex;"><span>  } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>    Region<span style="color:#f92672">-&gt;</span>ReleaseInfo.TryReleaseThreshold <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>        getMinReleaseAttemptSize(BlockSize);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><h3 id="refilling-chunks">Refilling Chunks:</h3>
+<p><img src="/Qdiv7/images/scudo/Screenshot-2.png" alt="alloc"></p>
+<p>When there&rsquo;s no more chunks to allocate, i.e the class&rsquo;s chunks count is null:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">allocate</span>(uptr ClassId) {
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	PerClass <span style="color:#f92672">*</span>C <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>PerClassArray[ClassId];
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (C<span style="color:#f92672">-&gt;</span>Count <span style="color:#f92672">==</span> <span style="color:#ae81ff">0</span>) { <span style="color:#75715e">// &lt;--------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>}
+</span></span></code></pre></div><p>The allocator needs to refill the chunks. And to do so, at the very bottom it calls this function:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/primary64.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>	u16 SizeClassAllocator64<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;::</span>popBlocksImpl(
+</span></span><span style="display:flex;"><span>	    SizeClassAllocatorT <span style="color:#f92672">*</span>SizeClassAllocator, uptr ClassId, RegionInfo <span style="color:#f92672">*</span>Region,
+</span></span><span style="display:flex;"><span>	    CompactPtrT <span style="color:#f92672">*</span>ToArray, <span style="color:#66d9ef">const</span> u16 MaxBlockCount) REQUIRES(Region<span style="color:#f92672">-&gt;</span>FLLock) 
+</span></span><span style="display:flex;"><span>	{
+</span></span></code></pre></div><ul>
+<li><code>SizeClassAllocator</code> is the that requested the refill, either one of Primary or Secondary.</li>
+<li><code>ClassId</code> is the class size that needs to be refillled.</li>
+<li><code>region</code> is the corresponding object that holds freelists that backs <code>ClassId</code>.</li>
+<li><code>ToArray</code> is <code>C-&gt;Chunks</code> directly.</li>
+<li><code>MaxBlockCount</code> is used as a bound for chunks refelling.</li>
+</ul>
+<p><strong>Step I</strong>: It checks that the region&rsquo;s freelist has available at least one BatchGroup, and grabs the first one, the head of the list:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">if</span> (Region<span style="color:#f92672">-&gt;</span>FreeListInfo.BlockList.empty())
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0U</span>;
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	SinglyLinkedList<span style="color:#f92672">&lt;</span>BatchT<span style="color:#f92672">&gt;</span> <span style="color:#f92672">&amp;</span>Batches <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>	      Region<span style="color:#f92672">-&gt;</span>FreeListInfo.BlockList.front()<span style="color:#f92672">-&gt;</span>Batches;
+</span></span></code></pre></div><p><strong>Step II</strong>: Get the first batch, from of the list, and copy the addresses(Compressed pointers) inside into to array:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	BatchT <span style="color:#f92672">*</span>B <span style="color:#f92672">=</span> Batches.front();
+</span></span><span style="display:flex;"><span>	DCHECK_NE(B, <span style="color:#66d9ef">nullptr</span>);
+</span></span><span style="display:flex;"><span>	DCHECK_GT(B<span style="color:#f92672">-&gt;</span>getCount(), <span style="color:#ae81ff">0U</span>);
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// BachClassId should always take all blocks in the Batch. Read the
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// comment in `pushBatchClassBlocks()` for more details.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">const</span> u16 PopCount <span style="color:#f92672">=</span> ClassId <span style="color:#f92672">==</span> SizeClassMap<span style="color:#f92672">::</span>BatchClassId
+</span></span><span style="display:flex;"><span>						   <span style="color:#f92672">?</span> B<span style="color:#f92672">-&gt;</span>getCount()
+</span></span><span style="display:flex;"><span>						   <span style="color:#f92672">:</span> Min(MaxBlockCount, B<span style="color:#f92672">-&gt;</span>getCount());
+</span></span><span style="display:flex;"><span>	B<span style="color:#f92672">-&gt;</span>moveNToArray(ToArray, PopCount);
+</span></span></code></pre></div><h3 id="populating-the-freelist">Populating the freelist:</h3>
+<p>When the freelist blocks them selves are empty,</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// scudo/standalone/primary64.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span><span style="color:#66d9ef">template</span> <span style="color:#f92672">&lt;</span><span style="color:#66d9ef">typename</span> Config<span style="color:#f92672">&gt;</span>
+</span></span><span style="display:flex;"><span>u16 SizeClassAllocator64<span style="color:#f92672">&lt;</span>Config<span style="color:#f92672">&gt;::</span>populateFreeListAndPopBlocks(
+</span></span><span style="display:flex;"><span>    SizeClassAllocatorT <span style="color:#f92672">*</span>SizeClassAllocator, uptr ClassId, RegionInfo <span style="color:#f92672">*</span>Region,
+</span></span><span style="display:flex;"><span>    CompactPtrT <span style="color:#f92672">*</span>ToArray, <span style="color:#66d9ef">const</span> u16 MaxBlockCount) REQUIRES(Region<span style="color:#f92672">-&gt;</span>MMLock)
+</span></span><span style="display:flex;"><span>    EXCLUDES(Region<span style="color:#f92672">-&gt;</span>FLLock) {
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>Config<span style="color:#f92672">::</span>getEnableContiguousRegions() <span style="color:#f92672">&amp;&amp;</span>
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">!</span>Region<span style="color:#f92672">-&gt;</span>MemMapInfo.MemMap.isAllocated()) {
+</span></span><span style="display:flex;"><span>    ReservedMemoryT ReservedMemory;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (UNLIKELY(<span style="color:#f92672">!</span>ReservedMemory.create(<span style="color:#75715e">/*Addr=*/</span><span style="color:#ae81ff">0U</span>, RegionSize,
+</span></span><span style="display:flex;"><span>                                        <span style="color:#e6db74">&#34;scudo:primary_reserve&#34;</span>,
+</span></span><span style="display:flex;"><span>                                        MAP_ALLOWNOMEM))) { <span style="color:#75715e">// [8]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      Printf(<span style="color:#e6db74">&#34;Can&#39;t reserve pages for size class %zu.</span><span style="color:#ae81ff">\n</span><span style="color:#e6db74">&#34;</span>,
+</span></span><span style="display:flex;"><span>             getSizeByClassId(ClassId));
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span> <span style="color:#ae81ff">0U</span>;
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    initRegion(Region, ClassId,
+</span></span><span style="display:flex;"><span>               ReservedMemory.dispatch(ReservedMemory.getBase(),
+</span></span><span style="display:flex;"><span>                                       ReservedMemory.getCapacity()),
+</span></span><span style="display:flex;"><span>               <span style="color:#75715e">/*EnableRandomOffset=*/</span>false); <span style="color:#75715e">// [9]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  }
+</span></span></code></pre></div><p>The actual hard allocation is done from [8] using down the line:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/mem_map.cpp
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">bool</span> MemMapDefault<span style="color:#f92672">::</span>mapImpl(uptr Addr, uptr Size, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>Name,
+</span></span><span style="display:flex;"><span>	                            uptr Flags) {
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>MappedAddr <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>	      <span style="color:#f92672">::</span>scudo<span style="color:#f92672">::</span>map(<span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span><span style="color:#66d9ef">void</span> <span style="color:#f92672">*&gt;</span>(Addr), Size, Name, Flags, <span style="color:#f92672">&amp;</span>Data);
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">if</span> (MappedAddr <span style="color:#f92672">==</span> <span style="color:#66d9ef">nullptr</span>)
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">return</span> false;
+</span></span><span style="display:flex;"><span>	  Base <span style="color:#f92672">=</span> <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span>uptr<span style="color:#f92672">&gt;</span>(MappedAddr);
+</span></span><span style="display:flex;"><span>	  MappedBase <span style="color:#f92672">=</span> Base;
+</span></span><span style="display:flex;"><span>	  Capacity <span style="color:#f92672">=</span> Size;
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">return</span> true;
+</span></span><span style="display:flex;"><span>	}
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/common.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// Our platform memory mapping use is restricted to 3 scenarios:
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// - reserve memory at a random address (MAP_NOACCESS);
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// - commit memory in a previously reserved space;
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// - commit memory at a random address.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// As such, only a subset of parameters combinations is valid, which is checked
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// by the function implementation. The Data parameter allows to pass opaque
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// platform specific data to the function.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">// Returns nullptr on error or dies if MAP_ALLOWNOMEM is not specified.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">map</span>(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Addr, uptr Size, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>Name, uptr Flags <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>,
+</span></span><span style="display:flex;"><span>	          MapPlatformData <span style="color:#f92672">*</span>Data <span style="color:#f92672">=</span> <span style="color:#66d9ef">nullptr</span>);
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// scudo/standalone/linux.cpp
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span><span style="color:#a6e22e">map</span>(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Addr, uptr Size, UNUSED <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">char</span> <span style="color:#f92672">*</span>Name, uptr Flags,
+</span></span><span style="display:flex;"><span>	          UNUSED MapPlatformData <span style="color:#f92672">*</span>Data) {
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">int</span> MmapFlags <span style="color:#f92672">=</span> MAP_PRIVATE <span style="color:#f92672">|</span> MAP_ANONYMOUS;
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">int</span> MmapProt;
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">if</span> (Flags <span style="color:#f92672">&amp;</span> MAP_NOACCESS) {
+</span></span><span style="display:flex;"><span>	    MmapFlags <span style="color:#f92672">|=</span> MAP_NORESERVE;
+</span></span><span style="display:flex;"><span>	    MmapProt <span style="color:#f92672">=</span> PROT_NONE;
+</span></span><span style="display:flex;"><span>	  } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>	    MmapProt <span style="color:#f92672">=</span> PROT_READ <span style="color:#f92672">|</span> PROT_WRITE;
+</span></span><span style="display:flex;"><span>	  }
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">#if defined(__aarch64__)
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#ifndef PROT_MTE
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#define PROT_MTE 0x20
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	  <span style="color:#66d9ef">if</span> (Flags <span style="color:#f92672">&amp;</span> MAP_MEMTAG)
+</span></span><span style="display:flex;"><span>	    MmapProt <span style="color:#f92672">|=</span> PROT_MTE;
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	  <span style="color:#66d9ef">if</span> (Addr)
+</span></span><span style="display:flex;"><span>	    MmapFlags <span style="color:#f92672">|=</span> MAP_FIXED;
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>P <span style="color:#f92672">=</span> mmap(Addr, Size, MmapProt, MmapFlags, <span style="color:#f92672">-</span><span style="color:#ae81ff">1</span>, <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	  <span style="color:#66d9ef">if</span> (P <span style="color:#f92672">==</span> MAP_FAILED) {
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>(Flags <span style="color:#f92672">&amp;</span> MAP_ALLOWNOMEM) <span style="color:#f92672">||</span> errno <span style="color:#f92672">!=</span> ENOMEM)
+</span></span><span style="display:flex;"><span>	      reportMapError(errno <span style="color:#f92672">==</span> ENOMEM <span style="color:#f92672">?</span> Size : <span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>	    <span style="color:#66d9ef">return</span> <span style="color:#66d9ef">nullptr</span>;
+</span></span><span style="display:flex;"><span>	  }
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">#if SCUDO_ANDROID
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	  <span style="color:#66d9ef">if</span> (Name)
+</span></span><span style="display:flex;"><span>	    prctl(ANDROID_PR_SET_VMA, ANDROID_PR_SET_VMA_ANON_NAME, P, Size, Name);
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">#endif
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	  <span style="color:#66d9ef">return</span> P;
+</span></span><span style="display:flex;"><span>	}
+</span></span></code></pre></div><p>Once the mapping is done, at [9] the freelist is refilled by reinitializing the region.</p>
+<p>What is nice about this split is that Scudo separates <strong>reservation</strong>, <strong>mapping</strong>, and <strong>serving blocks</strong> fairly cleanly. A region can exist conceptually before all of its pages are committed, and actual block production only happens when demand reaches that class. So even though the allocator reserves large virtual ranges, physical backing and usable chunks still appear lazily.</p>
+<hr>
+<h2 id="deleting-path---free">DELETING PATH - FREE</h2>
+<p>The <code>free</code> path mirrors the allocation path in structure, but its first priority is validation rather than speed. Before Scudo gives a block back to any cache or region, it reloads the hidden header, checks that the checksum still matches, and verifies that the chunk is currently in the <code>Allocated</code> state. Only after those checks pass does it decide whether the chunk should be quarantined or returned directly to the allocator backend.</p>
+<h3 id="normal-deallocation---cached">Normal Deallocation - Cached</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/combined.cpp
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  ALWAYS_INLINE <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">deallocate</span>(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr, Chunk<span style="color:#f92672">::</span>Origin Origin) {
+</span></span><span style="display:flex;"><span>    deallocate(Ptr, Origin, <span style="color:#75715e">/*DeleteSize=*/</span><span style="color:#ae81ff">0</span>, <span style="color:#75715e">/*DeleteAlignment=*/</span><span style="color:#ae81ff">0</span>);
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  NOINLINE <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">deallocate</span>(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr, u8 DeallocOrigin, uptr DeleteSize,
+</span></span><span style="display:flex;"><span>                           uptr DeleteAlignment) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (UNLIKELY(<span style="color:#f92672">!</span>Ptr))
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">return</span>;
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    Chunk<span style="color:#f92672">::</span>UnpackedHeader Header;
+</span></span><span style="display:flex;"><span>    Chunk<span style="color:#f92672">::</span>loadHeader(Cookie, Ptr, <span style="color:#f92672">&amp;</span>Header); <span style="color:#75715e">// &lt;----
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (UNLIKELY(Header.State <span style="color:#f92672">!=</span> Chunk<span style="color:#f92672">::</span>State<span style="color:#f92672">::</span>Allocated)) <span style="color:#75715e">// &lt;----
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>      reportInvalidChunkState(AllocatorAction<span style="color:#f92672">::</span>Deallocating, Ptr);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	quarantineOrDeallocateChunk(Options, TaggedPtr, <span style="color:#f92672">&amp;</span>Header, Size);
+</span></span><span style="display:flex;"><span>  }
+</span></span></code></pre></div><ul>
+<li>Use-After-Free and chunk corruption verification using:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#66d9ef">inline</span> <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">loadHeader</span>(u32 Cookie, <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr,
+</span></span><span style="display:flex;"><span>                       UnpackedHeader <span style="color:#f92672">*</span>NewUnpackedHeader) {
+</span></span><span style="display:flex;"><span>  PackedHeader NewPackedHeader <span style="color:#f92672">=</span> atomic_load_relaxed(getConstAtomicHeader(Ptr));
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">*</span>NewUnpackedHeader <span style="color:#f92672">=</span> bit_cast<span style="color:#f92672">&lt;</span>UnpackedHeader<span style="color:#f92672">&gt;</span>(NewPackedHeader);
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">if</span> (UNLIKELY(NewUnpackedHeader<span style="color:#f92672">-&gt;</span>Checksum <span style="color:#f92672">!=</span>
+</span></span><span style="display:flex;"><span>               computeHeaderChecksum(Cookie, Ptr, NewUnpackedHeader)))
+</span></span><span style="display:flex;"><span>    reportHeaderCorruption(NewUnpackedHeader, Ptr);
+</span></span><span style="display:flex;"><span>}
+</span></span></code></pre></div><blockquote>
+<p>Apriori, UAF is still possible, but the attacker will have to forge the checksum.</p>
+</blockquote>
+<ul>
+<li>Double free verification by checking the chunk&rsquo;s state:
+<code>Header.State != Chunk::State::Allocated</code></li>
+</ul>
+<p>TODO: More about the Cookie and checksum</p>
+<p>The important thing about the cookie is that the header checksum is not just a checksum of the header bytes in isolation. It is derived using the process-specific cookie and the pointer value, which means the attacker does not get a reusable &ldquo;write these bytes and the header becomes valid everywhere&rdquo; primitive. In practice that does not make corruption impossible, but it does mean many classic heap tricks now need either an information leak or a way to preserve header integrity while corrupting adjacent state.</p>
+<p>Easy visual to understand.</p>
+<p><img src="/Qdiv7/images/scudo/Screenshot-5.png" alt="alloc"></p>
+<p>If, <code>C-&gt;Count &gt;= C-&gt;MaxCount</code>, meaning the chunks array is full, half of the array is drained so that freeing becomes possible:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/size_class_allocator.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">bool</span> <span style="color:#a6e22e">deallocate</span>(uptr ClassId, <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>P) {
+</span></span><span style="display:flex;"><span>    CHECK_LT(ClassId, NumClasses);
+</span></span><span style="display:flex;"><span>    PerClass <span style="color:#f92672">*</span>C <span style="color:#f92672">=</span> <span style="color:#f92672">&amp;</span>PerClassArray[ClassId];
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// If the cache is full, drain half of blocks back to the main allocator.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">bool</span> NeedToDrainCache <span style="color:#f92672">=</span> C<span style="color:#f92672">-&gt;</span>Count <span style="color:#f92672">==</span> C<span style="color:#f92672">-&gt;</span>MaxCount;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (NeedToDrainCache)
+</span></span><span style="display:flex;"><span>      drain(C, ClassId); <span style="color:#75715e">// &lt;-------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// See comment in allocate() about memory accesses.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> uptr ClassSize <span style="color:#f92672">=</span> C<span style="color:#f92672">-&gt;</span>ClassSize;
+</span></span><span style="display:flex;"><span>    C<span style="color:#f92672">-&gt;</span>Chunks[C<span style="color:#f92672">-&gt;</span>Count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>        Allocator<span style="color:#f92672">-&gt;</span>compactPtr(ClassId, <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span>uptr<span style="color:#f92672">&gt;</span>(P));
+</span></span><span style="display:flex;"><span>    Stats.sub(StatAllocated, ClassSize);
+</span></span><span style="display:flex;"><span>	Stats.add(StatFree, ClassSize);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">return</span> NeedToDrainCache;
+</span></span><span style="display:flex;"><span>  }
+</span></span></code></pre></div><p>This is the symmetric operation to the allocation fast path we saw earlier. While <code>malloc</code> pops compact pointers from a per-class cache until it goes empty, <code>free</code> pushes compact pointers back until that cache goes full. Once it is full, half of it is flushed to the backend so the local cache stays bounded instead of growing without limit.</p>
+<h3 id="quarantine">Quarantine</h3>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/combined.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">quarantineOrDeallocateChunk</span>(<span style="color:#66d9ef">const</span> Options <span style="color:#f92672">&amp;</span>Options, <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>TaggedPtr,
+</span></span><span style="display:flex;"><span>                                   Chunk<span style="color:#f92672">::</span>UnpackedHeader <span style="color:#f92672">*</span>Header,
+</span></span><span style="display:flex;"><span>                                   uptr Size) NO_THREAD_SAFETY_ANALYSIS {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr <span style="color:#f92672">=</span> getHeaderTaggedPointer(TaggedPtr);
+</span></span><span style="display:flex;"><span>    <span style="color:#75715e">// If the quarantine is disabled, the actual size of a chunk is 0 or larger
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// than the maximum allowed, we return a chunk directly to the backend.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#75715e">// This purposefully underflows for Size == 0.
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    <span style="color:#66d9ef">const</span> <span style="color:#66d9ef">bool</span> BypassQuarantine <span style="color:#f92672">=</span> AllocatorConfig<span style="color:#f92672">::</span>getQuarantineDisabled() <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>                                  <span style="color:#f92672">!</span>Quarantine.getCacheSize() <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>                                  ((Size <span style="color:#f92672">-</span> <span style="color:#ae81ff">1</span>) <span style="color:#f92672">&gt;=</span> QuarantineMaxChunkSize) <span style="color:#f92672">||</span>
+</span></span><span style="display:flex;"><span>                                  <span style="color:#f92672">!</span>Header<span style="color:#f92672">-&gt;</span>ClassId;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (BypassQuarantine)
+</span></span><span style="display:flex;"><span>      Header<span style="color:#f92672">-&gt;</span>State <span style="color:#f92672">=</span> Chunk<span style="color:#f92672">::</span>State<span style="color:#f92672">::</span>Available;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">else</span>
+</span></span><span style="display:flex;"><span>      Header<span style="color:#f92672">-&gt;</span>State <span style="color:#f92672">=</span> Chunk<span style="color:#f92672">::</span>State<span style="color:#f92672">::</span>Quarantined;
+</span></span><span style="display:flex;"><span>	
+</span></span><span style="display:flex;"><span>	<span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	<span style="color:#66d9ef">if</span> (UNLIKELY(useMemoryTagging<span style="color:#f92672">&lt;</span>AllocatorConfig<span style="color:#f92672">&gt;</span>(Options)))
+</span></span><span style="display:flex;"><span>		retagBlock(Options, TaggedPtr, Ptr, Header, Size, false);
+</span></span><span style="display:flex;"><span>	<span style="color:#66d9ef">typename</span> TSDRegistryT<span style="color:#f92672">::</span>ScopedTSD TSD(TSDRegistry);
+</span></span><span style="display:flex;"><span>	Quarantine.put(<span style="color:#f92672">&amp;</span>TSD<span style="color:#f92672">-&gt;</span>getQuarantineCache(),
+</span></span><span style="display:flex;"><span>					 QuarantineCallback(<span style="color:#f92672">*</span><span style="color:#66d9ef">this</span>, TSD<span style="color:#f92672">-&gt;</span>getSizeClassAllocator()),
+</span></span><span style="display:flex;"><span>					 Ptr, Size); <span style="color:#75715e">// &lt;------
+</span></span></span></code></pre></div><p>First off, the Quarantine is not always used for every deallocation, and here are what &ldquo;bypasses&rdquo; it:</p>
+<ul>
+<li>If it is disabled by default.</li>
+<li>Or its cache size is 0</li>
+<li>Or the freed chunk has size &gt; QuarantineMaxChunkSize, that the quarantine does not support.</li>
+<li>Or the freed chunk belongs to classId 0.</li>
+</ul>
+<p>If none of these are true, the chunk is put into Quarantine <code>Chunk::State::Quarantined</code>.
+Now, what does Quarantine-ing means ?</p>
+<p>Conceptually, quarantine is just delayed reuse. Instead of making a freshly freed chunk immediately available for the next allocation of the same class, Scudo keeps it in an intermediate holding area for a while. That delay is extremely valuable defensively, because many heap exploits depend on reusing a freed object quickly and predictably before the program has a chance to notice the stale reference.</p>
+<p>The quarantine hold list of <code>QuarantineBatches</code>, each Batch</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span><span style="color:#75715e">// scudo/standalone/quarantine.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">put</span>(CacheT <span style="color:#f92672">*</span>C, Callback Cb, Node <span style="color:#f92672">*</span>Ptr, uptr Size) {
+</span></span><span style="display:flex;"><span>    C<span style="color:#f92672">-&gt;</span>enqueue(Cb, Ptr, Size);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (C<span style="color:#f92672">-&gt;</span>getSize() <span style="color:#f92672">&gt;</span> getCacheSize())
+</span></span><span style="display:flex;"><span>      drain(C, Cb); <span style="color:#75715e">// [12]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  }
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">enqueue</span>(Callback Cb, <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr, uptr Size) {
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (List.empty() <span style="color:#f92672">||</span> List.back()<span style="color:#f92672">-&gt;</span>Count <span style="color:#f92672">==</span> QuarantineBatch<span style="color:#f92672">::</span>MaxCount) {
+</span></span><span style="display:flex;"><span>      QuarantineBatch <span style="color:#f92672">*</span>B <span style="color:#f92672">=</span>
+</span></span><span style="display:flex;"><span>          <span style="color:#66d9ef">reinterpret_cast</span><span style="color:#f92672">&lt;</span>QuarantineBatch <span style="color:#f92672">*&gt;</span>(Cb.allocate(<span style="color:#66d9ef">sizeof</span>(<span style="color:#f92672">*</span>B)));
+</span></span><span style="display:flex;"><span>      DCHECK(B);
+</span></span><span style="display:flex;"><span>      B<span style="color:#f92672">-&gt;</span>init(Ptr, Size);
+</span></span><span style="display:flex;"><span>      enqueueBatch(B);
+</span></span><span style="display:flex;"><span>    } <span style="color:#66d9ef">else</span> {
+</span></span><span style="display:flex;"><span>      List.back()<span style="color:#f92672">-&gt;</span>push_back(Ptr, Size);
+</span></span><span style="display:flex;"><span>      addToSize(Size);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">push_back</span>(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr, uptr Size) {
+</span></span><span style="display:flex;"><span>    DCHECK_LT(Count, MaxCount);
+</span></span><span style="display:flex;"><span>    Batch[Count<span style="color:#f92672">++</span>] <span style="color:#f92672">=</span> Ptr;
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">this</span><span style="color:#f92672">-&gt;</span>Size <span style="color:#f92672">+=</span> Size;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// [...]
+</span></span></span></code></pre></div><p><code>C-&gt;enqueue(Cb, Ptr, Size);</code> basically as we said, a <code>QuarantineCache</code> instance contains a list of batches and each batch has an array of <code>MaxCount == 1019</code> , that is, each batch can store up to 1019 pointers, that are quarantined pointers.</p>
+<p>How are these pointers reclaimed ?</p>
+<ul>
+<li>When a pointer is put into quarantine, at [12], if <code>getCacheSize()</code> (which is the maximum size of the per-thread Quarantine cache(configuration with param <code>thread_local__quarantine_size_kb</code>)), is inferior  the current size  <code>C-&gt;getSize()</code> i.e: the number of pointers in the Quarantine.</li>
+</ul>
+<p>The pointers are simply deallocated with</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>    <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">recycle</span>(<span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>Ptr) {
+</span></span><span style="display:flex;"><span>      Chunk<span style="color:#f92672">::</span>UnpackedHeader Header;
+</span></span><span style="display:flex;"><span>      Chunk<span style="color:#f92672">::</span>loadHeader(Allocator.Cookie, Ptr, <span style="color:#f92672">&amp;</span>Header);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (UNLIKELY(Header.State <span style="color:#f92672">!=</span> Chunk<span style="color:#f92672">::</span>State<span style="color:#f92672">::</span>Quarantined))
+</span></span><span style="display:flex;"><span>        reportInvalidChunkState(AllocatorAction<span style="color:#f92672">::</span>Recycling, Ptr);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      Header.State <span style="color:#f92672">=</span> Chunk<span style="color:#f92672">::</span>State<span style="color:#f92672">::</span>Available;
+</span></span><span style="display:flex;"><span>      Chunk<span style="color:#f92672">::</span>storeHeader(Allocator.Cookie, Ptr, <span style="color:#f92672">&amp;</span>Header);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">if</span> (allocatorSupportsMemoryTagging<span style="color:#f92672">&lt;</span>AllocatorConfig<span style="color:#f92672">&gt;</span>())
+</span></span><span style="display:flex;"><span>        Ptr <span style="color:#f92672">=</span> untagPointer(Ptr);
+</span></span><span style="display:flex;"><span>      <span style="color:#66d9ef">void</span> <span style="color:#f92672">*</span>BlockBegin <span style="color:#f92672">=</span> Allocator<span style="color:#f92672">::</span>getBlockBegin(Ptr, <span style="color:#f92672">&amp;</span>Header);
+</span></span><span style="display:flex;"><span>      SizeClassAllocator.deallocate(Header.ClassId, BlockBegin);
+</span></span><span style="display:flex;"><span>    }
+</span></span></code></pre></div><p>After some merging work, the recycling function takes all Quarantine Batches and for each batch, it deallocates pointers Batch[i] , that is, all the pointers stored in the batch array.</p>
+<p>So quarantine is not a separate forever-heap; it is just a staging layer in front of the normal backend free path. Chunks eventually come back to the allocator, but only after spending some time in a structure that intentionally breaks the &ldquo;free now, reuse immediately&rdquo; behavior many bugs depend on.</p>
+<ul>
+<li>The second case is when <code>mallopt(...)</code> is called which forces Quarantine draining, by triggers the following sequence:</li>
+</ul>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-cpp" data-lang="cpp"><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/combined.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#75715e">// [...]
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">drainCaches</span>() { TSDRegistry.drainCaches(<span style="color:#66d9ef">this</span>); } <span style="color:#75715e">// 1
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>	
+</span></span><span style="display:flex;"><span>  <span style="color:#75715e">// scudo/standalone/tsd_shared.h
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>  <span style="color:#66d9ef">void</span> <span style="color:#a6e22e">drainCaches</span>(Allocator <span style="color:#f92672">*</span>Instance) { <span style="color:#75715e">// 2
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    ScopedLock L(Mutex);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">for</span> (uptr I <span style="color:#f92672">=</span> <span style="color:#ae81ff">0</span>; I <span style="color:#f92672">&lt;</span> NumberOfTSDs; <span style="color:#f92672">++</span>I) {
+</span></span><span style="display:flex;"><span>      TSDs[I].lock();
+</span></span><span style="display:flex;"><span>      Instance<span style="color:#f92672">-&gt;</span>drainCache(<span style="color:#f92672">&amp;</span>TSDs[I]);
+</span></span><span style="display:flex;"><span>      TSDs[I].unlock();
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span>  <span style="color:#66d9ef">void</span> drainCache(TSD<span style="color:#f92672">&lt;</span>ThisT<span style="color:#f92672">&gt;</span> <span style="color:#f92672">*</span>TSD) { <span style="color:#75715e">// 3
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>    TSD<span style="color:#f92672">-&gt;</span>assertLocked(<span style="color:#75715e">/*BypassCheck=*/</span>true);
+</span></span><span style="display:flex;"><span>    <span style="color:#66d9ef">if</span> (<span style="color:#f92672">!</span>AllocatorConfig<span style="color:#f92672">::</span>getQuarantineDisabled()) {
+</span></span><span style="display:flex;"><span>      Quarantine.drainAndRecycle( <span style="color:#75715e">// &lt;-------
+</span></span></span><span style="display:flex;"><span><span style="color:#75715e"></span>          <span style="color:#f92672">&amp;</span>TSD<span style="color:#f92672">-&gt;</span>getQuarantineCache(),
+</span></span><span style="display:flex;"><span>          QuarantineCallback(<span style="color:#f92672">*</span><span style="color:#66d9ef">this</span>, TSD<span style="color:#f92672">-&gt;</span>getSizeClassAllocator()));
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    TSD<span style="color:#f92672">-&gt;</span>getSizeClassAllocator().drain();
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  }
+</span></span></code></pre></div><p>There are really two levels here. The thread-local <code>QuarantineCache</code> is the fast ingestion point where a thread first drops freed chunks, while the global quarantine logic decides when caches must be drained and recycled to keep overall memory usage under control. So, just like the primary allocator itself, Scudo again combines a cheap local fast path with a more coordinated global mechanism in the background.</p>
+<h2 id="whats-left-to-do">What&rsquo;s Left To do:</h2>
+<p>This post is meant to be an introduction to more posts to come in the future; there&rsquo;s many components to analyze: MTE, Guarded ASAN Allocator &amp; of course, thinking about mitigation bypasses, even though let me tell you, this seems to be no easy task.</p>
+<h2 id="each-files-functionality">Each file&rsquo;s functionality</h2>
+<p>If you are navigating the source for the first time, the easiest way is to treat it as a pipeline: wrappers at the front, <code>combined.h</code> as the main dispatcher, TSD files for per-thread state, primary/secondary backends for actual block sourcing, and quarantine code for delayed frees.</p>
+<p><code>wrappers_c.cpp</code> : handles heap operations in C (malloc, free, realloc&hellip;etc)
+<code>wrappers_cpp.cpp</code> : handles heap operations in C++ (new, delete &hellip;etc)
+<code>combined.h</code> : implements the core logic
+<code>tsd_shared.h</code> / <code>tsd_exclusive.h</code> : describe how allocator state is attached to threads.
+<code>primary64.h</code> : implements the 64-bit size-class primary backend and its regions / batches logic.
+<code>secondary.h</code> and related mapping code : handle large allocations that bypass the primary size classes.
+<code>quarantine.h</code> : implements delayed reuse of freed chunks through quarantine batches and recycling.</p>
+<h2 id="references">References:</h2>
+<ul>
+<li><a href="https://source.android.com/docs/security/test/scudo?hl=fr">https://source.android.com/docs/security/test/scudo?hl=fr</a></li>
+<li><a href="https://www.l3harris.com/newsroom/editorial/2023/10/scudo-hardened-allocator-unofficial-internals-documentation">https://www.l3harris.com/newsroom/editorial/2023/10/scudo-hardened-allocator-unofficial-internals-documentation</a></li>
+<li><a href="https://un1fuzz.github.io/articles/scudo_internals.html">https://un1fuzz.github.io/articles/scudo_internals.html</a></li>
+<li><a href="https://nebelwelt.net/files/24WOOT.pdf">https://nebelwelt.net/files/24WOOT.pdf</a></li>
+<li><a href="https://llvm.org/docs/ScudoHardenedAllocator.html">https://llvm.org/docs/ScudoHardenedAllocator.html</a></li>
+<li>Video: <a href="https://www.youtube.com/watch?v=Gnyc0VP2-JU">https://www.youtube.com/watch?v=Gnyc0VP2-JU</a></li>
+</ul>
+
+    </div>
+    <footer class="content__footer"></footer>
+
+            </section>
+
+            <section class="page__aside">
+                <div class="aside__about">
+<div class="aside__about">
+    
+    
+<h1 class="about__title">Moe&#39;s VR blog</h1>
+<p class="about__description">Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.</p>
+</div>
+
+
+<ul class="aside__social-links">
+    
+</ul>
+</div>
+                <hr>
+                <div class="aside__content">
+    
+    
+        <p>
+            
+            2026-05-10
+        </p>
+    
+
+    
+
+                </div>
+            </section>
+
+            <footer class="page__footer">
+
+<p class="language-note">
+  <span>Language:</span>
+  <strong>English</strong>
+</p>
+
+<p class="copyright"></p>
+<p class="advertisement">Powered by <a href="https://gohugo.io/">hugo</a> and <a href="https://github.com/joeroe/risotto">risotto</a>.</p>
+</footer>
+
+        </div>
+    </body>
+
+</html>

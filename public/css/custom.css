@@ -1,0 +1,53 @@
+.home-title:before {
+    content: none;
+}
+
+.home-intro {
+    margin-bottom: 1rem;
+}
+
+.home-title {
+    margin: 0 0 0.75rem 0;
+    font-size: 1.5rem;
+    line-height: 1.9rem;
+}
+
+.home-lead p {
+    margin-bottom: 0.75rem;
+    color: var(--off-fg);
+}
+
+.home-signoff {
+    margin: 0 0 0.75rem 0;
+}
+
+.home-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1rem;
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.home-links li::marker {
+    content: none;
+}
+
+.language-note {
+    color: var(--muted);
+}
+
+.language-note span {
+    color: var(--off-fg);
+}
+
+@media (max-width: 45rem) {
+    .home-links {
+        display: block;
+    }
+
+    .home-links li + li {
+        margin-top: 0.35rem;
+    }
+}

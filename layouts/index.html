@@ -1,0 +1,19 @@
+{{ define "main" }}
+  <section class="home-intro">
+    <h1 class="home-title">Security Research Enthusiast</h1>
+    <div class="home-lead">
+      {{ .Content }}
+    </div>
+    <p class="home-signoff">Enjoy reading.</p>
+
+    <ul class="home-links">
+      {{ range site.Params.social }}
+        <li>
+          <a href="{{ .url }}">
+            {{ if eq .name "X" }}Twitter{{ else }}{{ .name }}{{ end }}
+          </a>
+        </li>
+      {{ end }}
+    </ul>
+  </section>
+{{ end }}
