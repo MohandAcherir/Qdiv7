@@ -62,7 +62,7 @@ _source: https://docs.qualcomm.com/doc/80-70017-19/topic/graphics-overview.html
 
 ## DSPs
 
-To offload heavy operations on the CPU, the Qualcomm SoC has integrated many DSPs (Digital Signature Processor) like **aDSP**(application DSP), **cDSP**(compute DSP) or **mDSP**(modem DSP) for baseband; each DSP runs QuRT1 which is a Qualcomm's proprietary RTOS.
+To offload heavy operations on the CPU, the Qualcomm SoC has integrated many DSPs (Digital Signal Processor) like **aDSP**(application DSP), **cDSP**(compute DSP) or **mDSP**(modem DSP) for baseband; each DSP runs QuRT1 which is a Qualcomm's proprietary RTOS.
 
 ![](/Qdiv7/images/Qcom-basics/Screenshot-14.png)
 
