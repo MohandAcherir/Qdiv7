@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+
+    <head><title>Qualcomm SoC Internals Basics – Moe&#39;s VR blog</title>
+<meta name="description" content="Starting my journey in Mobile Vendor Chips internals &amp; VR, i chose Qualcomm SoC since it is a very well known and a dominant brand in the phone space, and of course, a cherished target among exploit …">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
+
+<link rel="canonical" href="https://mohandacherir.github.io/Qdiv7/posts/qualcomm-soc/">
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css" integrity="sha512-Kc323vGBEqzTmouAECnVceyQqyqdsSiqLQISBL29aUW4U/M7pSPA/gEUZQqv1cwx4OnYxTxve5UMg5GT6L4JJg==" crossorigin="anonymous" referrerpolicy="no-referrer">
+
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css" integrity="sha512-IW0nhlW5MgNydsXJO40En2EoCkTTjZhI3yuODrZIc8cQ4h1XcF53PsqDHa09NqnkXuIe0Oiyyj171BqZFwISBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+
+
+<link rel="stylesheet" href="https://mohandacherir.github.io/Qdiv7/css/palettes/base16-dark.css">
+<link rel="stylesheet" href="https://mohandacherir.github.io/Qdiv7/css/risotto.css">
+<link rel="stylesheet" href="https://mohandacherir.github.io/Qdiv7/css/custom.css">
+
+
+
+
+
+
+
+
+
+
+
+
+<meta property="og:title" content="Qualcomm SoC Internals Basics – Moe&#39;s VR blog">
+<meta property="og:description" content="Starting my journey in Mobile Vendor Chips internals &amp; VR, i chose Qualcomm SoC since it is a very well known and a dominant brand in the phone space, and of course, a cherished target among exploit …">
+<meta property="og:url" content="https://mohandacherir.github.io/Qdiv7/posts/qualcomm-soc/">
+<meta property="og:site_name" content="Moe&#39;s VR blog">
+<meta property="og:type" content="article">
+<meta property="og:image" content="https://mohandacherir.github.io/Qdiv7/images/scudo/Screenshot-2.png">
+<meta property="og:locale" content="en">
+
+<meta property="article:published_time" content="2026-05-17T20:16:14&#43;02:00">
+<meta property="article:modified_time" content="2026-05-17T20:16:14&#43;02:00">
+
+
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Qualcomm SoC Internals Basics – Moe&#39;s VR blog">
+<meta name="twitter:description" content="Starting my journey in Mobile Vendor Chips internals &amp; VR, i chose Qualcomm SoC since it is a very well known and a dominant brand in the phone space, and of course, a cherished target among exploit …">
+<meta name="twitter:image" content="https://mohandacherir.github.io/Qdiv7/images/scudo/Screenshot-2.png">
+<meta name="twitter:site" content="@AcherirMoe">
+<meta name="twitter:creator" content="@AcherirMoe">
+</head>
+
+    <body>
+        <div class="page">
+
+            <header class="page__header"><nav class="page__nav main-nav">
+    <ul>
+      <li class="nomarker"><h1 class="page__logo"><a href="https://mohandacherir.github.io/Qdiv7/" class="page__logo-inner">Moe&#39;s VR blog</a></h1></li>
+    
+    
+    <li class="main-nav__item"><a class="nav-main-item" href="https://mohandacherir.github.io/Qdiv7/posts/" title="">Posts</a></li>
+    
+    <li class="main-nav__item"><a class="nav-main-item" href="https://mohandacherir.github.io/Qdiv7/tags/" title="">Tags</a></li>
+    
+    <li class="main-nav__item"><a class="nav-main-item" href="https://github.com/MohandAcherir" title="">GitHub</a></li>
+    
+    </ul>
+</nav>
+
+</header>
+
+            <section class="page__body">
+    <header class="content__header">
+        <h1>Qualcomm SoC Internals Basics</h1>
+    </header>
+    <div class="content__body">
+        <p>Starting my journey in Mobile Vendor Chips internals &amp; VR, i chose Qualcomm SoC since it is a very well known and a dominant brand in the phone space, and of course, a cherished target among exploit developers in many angles. However, it has a complex architecture and massive codebase; if we take for example the <code>Snapdragon</code> SoCs, they have: a CPU, Andreno GPU, many DSPs, AI accelerators(NPU), sensors, video processors&hellip;etc and each one of these has its own microprocessor, firmware and Operating System; so, even to start out, one should at least have a big picture before blindly diving into one specific thing; hence my goal is to establish some foundation.</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-1.webp" alt="">
+_source: <a href="https://www.androidheadlines.com/2024/10/snapdragon-8-elite-leaked.html">https://www.androidheadlines.com/2024/10/snapdragon-8-elite-leaked.html</a></p>
+<p>The threat model to my knowledge has at least 4 categories:</p>
+<ul>
+<li>LPEs in the Application Processor, which is probably the most common one; many browser sandbox escapes and straight LPEs happen from restricted apps that have access to devices <code>/dev/*</code> or some <code>/proc/*</code> like <code>/dev/kgsl-3d0</code> or <code>/dev/vpu</code> &hellip;etc, where IOCTLs give a rich attack surface into the AP-side GPU / NPU / VPU&hellip;etc drivers; this is standard kernel exploitation if we put aside the debugging issues.</li>
+<li>RCEs: Remote Code Execution is a very known thing is AP userspace like in WhatApp, Browser, and all 0/1-clicks stuff. But, here we have another kind of RCE, which is from Cellular Networking in 3/4/5G that we use in our mobile phones to get internet or make calls. In modern chips, a dedicated processor, called Baseband Processor or BP, is used to handle the operations on the Network traffic; on Qualcomm chips, the <strong>mDSP</strong> is the BP where on top of the RTOS kernel, userspace task(s) that handle the actual baseband logic maybe have exploitable vulnerabilities just like in regular userpace programs, and thus resulting in an RCE on the BP; However, an RCE in this case does not give access to the other DSPs or the CPU system, unless chained with other bugs to pivot.</li>
+<li>bootloader unlocking: Unlocking the bootloader is crucial for security search, and this is done using hardware ..etc etc.</li>
+<li>TrustZone hacking.</li>
+</ul>
+<h2 id="qualcomm-gpu----adreno">Qualcomm GPU -  Adreno</h2>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-2.png" alt=""></p>
+<h3 id="kgsl">KGSL:</h3>
+<p>_sources: <a href="https://git.codelinaro.org/clo/la/platform/vendor/qcom/opensource/graphics-kernel/-/tree/gfx-kernel.lnx.16.0.r8-rel?ref_type=heads">https://git.codelinaro.org/clo/la/platform/vendor/qcom/opensource/graphics-kernel</a></p>
+<p>Kernel Graphics Support Layer or, <strong>KGSL</strong>, serves as the kernel-mode driver for the Adreno GPU in the CPU (the GPU hardware itself runs its own drivers in its own CPU). As the official documentation says: <code>&quot;the primary function of the KGSL driver is to submit commands generated by the Adreno user-mode driver to the Adreno GPU for processing&quot;</code>. The &ldquo;user-mode driver&rdquo; just means a userspace <code>.so</code> library that simplifies the work for the user/program like <code>libvulkan_adreno.so</code>, <code>libGLESv1_CM_adreno.so</code>&hellip;etc. Additionally, the KGSL driver communicates with the <strong>GMU</strong>(Graphics Management Unit) to ensure proper state management.</p>
+<p>This driver can be thought of as an API for the Host system to control the GPU execution through many IOCTLs  (in <code>kgsl_ioctl.c</code>):</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span>IOCTL_KGSL_DEVICE_GETPROPERTY
+</span></span><span style="display:flex;"><span>IOCTL_KGSL_DEVICE_WAITTIMESTAMP_CTXTID
+</span></span><span style="display:flex;"><span>IOCTL_KGSL_SUBMIT_COMMANDS
+</span></span><span style="display:flex;"><span>IOCTL_KGSL_MAP_USER_MEM
+</span></span><span style="display:flex;"><span>IOCTL_KGSL_SHAREDMEM_FROM_PMEM
+</span></span><span style="display:flex;"><span>IOCTL_KGSL_GPUMEM_FREE_ID
+</span></span><span style="display:flex;"><span><span style="color:#75715e">// [...]
+</span></span></span></code></pre></div><h3 id="inside-the-gpu">Inside the GPU:</h3>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-4.png" alt="">
+_source: <a href="https://chipsandcheese.com/p/correction-on-qualcomm-igpus">https://chipsandcheese.com/p/correction-on-qualcomm-igpus</a></p>
+<p>Well, the GPU is a big complex piece of hardware &amp; software and it&rsquo;s certainly beyond my understanding; it is interesting to note though that it has many processors in it, and not only one:
+Command Processor, Multiple Shader Processors, GMU Processor; and each one has its microcode &amp; firmware.</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-3.png" alt="">
+_source: <a href="https://docs.qualcomm.com/doc/80-70017-19/topic/graphics-overview.html">https://docs.qualcomm.com/doc/80-70017-19/topic/graphics-overview.html</a></p>
+<h2 id="dsps">DSPs</h2>
+<p>To offload heavy operations on the CPU, the Qualcomm SoC has integrated many DSPs (Digital Signature Processor) like <strong>aDSP</strong>(application DSP), <strong>cDSP</strong>(compute DSP) or <strong>mDSP</strong>(modem DSP) for baseband; each DSP runs QuRT1 which is a Qualcomm&rsquo;s proprietary RTOS.</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-14.png" alt=""></p>
+<p>Their firmware is verified by the <strong>TEE</strong> before the DSPs starting.
+The DSPs firmware files are available to download either from the net or locally in <code>/lib/firmware/qcom</code>:</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-5.png" alt=""></p>
+<p>The communication CPU &lt;-&gt; DSP  is done through shared memory and an RPC protocol, since the DSPs need to fetch the CPUs requests, and likewise the CPU needs to grab the results.</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-6.png" alt=""></p>
+<p>As documented in <a href="https://github.com/qualcomm/fastrpc">fastRPC repo</a> :</p>
+<p><strong>Workflow:</strong></p>
+<ol>
+<li>The CPU process calls the stub version of the function. The stub code converts the function call to an RPC message.</li>
+<li>The stub code internally invokes the FastRPC framework on the CPU to queue the converted message.</li>
+<li>The FastRPC framework on the CPU sends the queued message to the FastRPC DSP framework on the DSP.</li>
+<li>The FastRPC DSP framework on the DSP dispatches the call to the relevant skeleton code.</li>
+<li>The skeleton code un-marshals the parameters and calls the method implementation.</li>
+<li>The skeleton code waits for the implementation to finish processing, and, in turn, marshals the return value and any other output arguments into the return message.</li>
+<li>The skeleton code calls the FastRPC DSP framework to queue the return message to be transmitted to the CPU.</li>
+<li>The FastRPC DSP framework on the DSP sends the return message back to the FastRPC framework on the CPU.</li>
+<li>The FastRPC framework identifies the waiting stub code and dispatches the return value.</li>
+<li>The stub code un-marshals the return message and sends it to the calling User mode process.</li>
+</ol>
+<p><strong>Concepts</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Application</td>
+<td>User mode process that initiates the remote invocation</td>
+</tr>
+<tr>
+<td>Stub</td>
+<td>Auto-generated code that takes care of marshaling parameters and runs on the CPU</td>
+</tr>
+<tr>
+<td>FastRPC user driver on CPU</td>
+<td>User mode library that is used by the stub code to do remote invocations</td>
+</tr>
+<tr>
+<td>FastRPC Kernel Driver</td>
+<td>Receives the remote invocations from the client, queues them up for transport to the DSP side over rpmsg, and then waits for the response after signaling the remote side</td>
+</tr>
+<tr>
+<td>rpmsg</td>
+<td>Remote Processor Messaging is the transport mechanism used between the CPU-side FastRPC kernel driver and the DSP-side FastRPC driver to exchange FastRPC requests and responses</td>
+</tr>
+<tr>
+<td>FastRPC DSP Driver</td>
+<td>Dequeues the messages received over rpmsg from the FastRPC kernel driver and dispatches them for processing</td>
+</tr>
+<tr>
+<td>FastRPC user driver on DSP</td>
+<td>User mode code that includes a shell executable to run in the user protection domain (PD) on the DSP and complete the remote invocations to the skel library</td>
+</tr>
+<tr>
+<td>Skel</td>
+<td>Auto-generated code that un-marshals parameters and invokes the user-defined implementation of the function that runs on the DSP</td>
+</tr>
+<tr>
+<td>User PD</td>
+<td>User protection domain on the DSP that provides the environment to run the user code</td>
+</tr>
+</tbody>
+</table>
+<h3 id="qurt-os--hexagon">QuRT OS &amp; Hexagon</h3>
+<p>On every DSP, <strong>QuRT</strong> (Qualcomm Real-Time) OS is running; and DSP&rsquo;s processor has the <strong>Hexagon</strong> architecture. This choice of running the baseband on its own separate CPU and not the ARM AP, is because it is time sensitive and needs to be responsive quasi-instantly; the usage of Real-Rime OS has the same goal, since this kind of OS has deterministic microsecond-level scheduling, where higher priority threads preempt lower priority ones.</p>
+<p>Though, there are not too many information QuRT, since it is a proprietary OS, i hope i am going to write more about this in the near future.</p>
+<p>Moving onto <strong>hexagon</strong> architecture&hellip;</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-8.png" alt="">
+_source: <a href="https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf">https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf</a></p>
+<p>There are 4 executions units S0 to S3 each one handles specific instructions; the <strong>Sequencer</strong> grabs to 4 instructions(32 bit instructions) from RAM, and feeds the execution units.
+This architecture has 2 types of registers:</p>
+<ul>
+<li><strong>General Purpose Register</strong>(32-bit): <strong>R0</strong> to <strong>R28</strong> that are used for scalar/vector arithmetic and different other general operations like storing operands and memory addresses for instructions. From <strong>R29</strong> to <strong>R31</strong>, aliased as <strong>SP</strong>, <strong>FP</strong> and <strong>LR</strong> respectively, are used for execution, where <strong>SP</strong> is Stack Pointer that points to the top of the stack(as in x86), <strong>FP</strong> points to the current stack frame of the current task(like <strong>RBP</strong> in x86), and <strong>LR</strong> stores  the return address of a subroutine call.</li>
+</ul>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-9.png" alt="">
+_source: <a href="https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf">https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf</a></p>
+<ul>
+<li><strong>Control Registers</strong>: these likewise 32-bit register that provide access to the processor&rsquo;s features such as <strong>PC</strong> (Program Counter, RIP in x86), hardware loops etc.</li>
+</ul>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-10.png" alt="">
+_source: <a href="https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf">https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf</a></p>
+<h3 id="stack-structure">Stack Structure:</h3>
+<p>The Stack as any many other architectures grows downwards, and <strong>SP</strong> points to its top(must be 8-byte aligned). Each subroutine(function call) creates its own frame with is pointed to by <strong>FP</strong> and contains its local variables. <strong>LR</strong> &amp; <strong>FP</strong> are saved as the return address after the subroutine completes just, and the frame pointer of the caller routine respectively.</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-11.png" alt="">
+_source: <a href="https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf">https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf</a></p>
+<p>Security wise, execution hijacking though <strong>Saved LR</strong> corruption is the most famous exploitation technique; and <strong>Hexagon</strong> seems to implement a protection mechanism against that:</p>
+<p><img src="/Qdiv7/images/Qcom-basics/Screenshot-13.png" alt="">
+_source: <a href="https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf">https://docs.qualcomm.com/doc/80-N2040-53/80-N2040-53.pdf</a></p>
+<ul>
+<li>Using <strong>FRAMEKEY</strong>, the value of <strong>LR</strong> is simply XOR&rsquo;d with it before saving upon a subroutine call:
+<code>Saved LR &lt;- {FRAMEKEY} XOR {LR}</code>.</li>
+<li><strong>FRAMELIMIT</strong> is simply a bound limit that <strong>SP</strong> is checked against so it doesn&rsquo;t go beyond this lower limit.</li>
+</ul>
+<p>This is done in this <strong>prologue</strong> section:</p>
+<pre tabindex="0"><code>allocframe(#u11:3) -&gt;
+
+This instruction is used after a call. It first XORs the values in
+LR and FRAMEKEY, and pushes the resulting scrambled
+return address and FP to the top of the stack.
+Next, it subtracts an unsigned immediate from SP to allocate
+room for local variables. If the resulting SP is less than
+FRAMELIMIT, the processor raises exception 0x27.
+Otherwise, SP is set to the new value, and FP is set to the
+address of the old frame pointer on the stack.
+The immediate operand as expressed in assembly syntax
+specifies the byte offset. This value must be 8-byte aligned.
+The valid range is from 0 to 16 KB.
+</code></pre><p>In the <strong>Epilogue</strong> : <code>dealloc_return</code> is the equivalent of <code>ret</code> in <strong>x86</strong></p>
+<pre tabindex="0"><code>dealloc_return -&gt;
+
+Subroutine return with stack frame deallocate.
+Perform the **deallocframe** operation, and then perform the
+subroutine return (Section 8.3.3) to the target address
+loaded from LR by deallocframe.
+</code></pre><p><code>deallocframe</code> :</p>
+<pre tabindex="0"><code>deallocframe -&gt;
+
+Deallocate stack frame.
+Use this instruction before a return to free a stack frame. It
+first loads the saved FP and LR values from the address at
+FP, and XORs the restored LR with the value in FRAMEKEY
+to unscramble the return address. SP is then pointed back to
+the previous frame.
+</code></pre><h2 id="closing-word">Closing Word:</h2>
+<p>This is meant be to an introduction to this very interesting topic; i hope there will be more to come soon&hellip;
+stay tuned.</p>
+<hr>
+<h2 id="references">References:</h2>
+<ul>
+<li><a href="https://www.freecodecamp.org/news/qurt-the-real-time-os-inside-your-phone-s-processor-full-handbook/">https://www.freecodecamp.org/news/qurt-the-real-time-os-inside-your-phone-s-processor-full-handbook/</a></li>
+<li><a href="https://androidoffsec.withgoogle.com/posts/a-technical-deep-dive-into-cve-2024-23380-exploiting-gpu-memory-corruption-to-android-root/">https://androidoffsec.withgoogle.com/posts/a-technical-deep-dive-into-cve-2024-23380-exploiting-gpu-memory-corruption-to-android-root/</a></li>
+<li><a href="https://fosdem.org/2026/events/attachments/SXNNMZ-snapdragon_8_gen_3_mainline_from_day-1_patches_to_product_reality/slides/267187/fosdem_20_bqxykvk.pdf">https://fosdem.org/2026/events/attachments/SXNNMZ-snapdragon_8_gen_3_mainline_from_day-1_patches_to_product_reality/slides/267187/fosdem_20_bqxykvk.pdf</a></li>
+<li><a href="https://www.youtube.com/watch?v=U_awEXRp72k">https://www.youtube.com/watch?v=U_awEXRp72k</a></li>
+<li><a href="https://census-labs.com/media/attacking-hexagon-recon19.pdf">https://census-labs.com/media/attacking-hexagon-recon19.pdf</a></li>
+<li><a href="https://zerodayengineering.com/research/slides/BH2025_ReverseEngineeringHexagonISDB.pdf">https://zerodayengineering.com/research/slides/BH2025_ReverseEngineeringHexagonISDB.pdf</a></li>
+</ul>
+
+    </div>
+    <footer class="content__footer"></footer>
+
+            </section>
+
+            <section class="page__aside">
+                <div class="aside__about">
+<div class="aside__about">
+    
+    
+<h1 class="about__title">Moe&#39;s VR blog</h1>
+<p class="about__description">Security Research Enthusiast: Kernels, Hypervisors, or anything worth exploring.</p>
+</div>
+
+
+<ul class="aside__social-links">
+    
+</ul>
+</div>
+                <hr>
+                <div class="aside__content">
+    
+    
+        <p>
+            
+            2026-05-17
+        </p>
+    
+
+    
+
+                </div>
+            </section>
+
+            <footer class="page__footer">
+
+<p class="language-note">
+  <span>Language:</span>
+  <strong>English</strong>
+</p>
+
+<p class="copyright"></p>
+<p class="advertisement">Powered by <a href="https://gohugo.io/">hugo</a> and <a href="https://github.com/joeroe/risotto">risotto</a>.</p>
+</footer>
+
+        </div>
+    </body>
+
+</html>

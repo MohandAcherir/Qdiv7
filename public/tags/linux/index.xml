@@ -2,31 +2,31 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Linux on Moe&#39;s VR blog</title>
-    <link>http://localhost:1313/Qdiv7/tags/linux/</link>
+    <link>https://mohandacherir.github.io/Qdiv7/tags/linux/</link>
     <description>Recent content in Linux on Moe&#39;s VR blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
     <lastBuildDate>Wed, 15 Apr 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="http://localhost:1313/Qdiv7/tags/linux/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/linux/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>CVE-2026-31419: Use-After-Free in the Linux Bonding Driver</title>
-      <link>http://localhost:1313/Qdiv7/posts/cve-2026-31419/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/cve-2026-31419/</link>
       <pubDate>Wed, 15 Apr 2026 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/cve-2026-31419/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/cve-2026-31419/</guid>
       <description>Introduction Linux offers a way to synchronize multiple network interfaces, physical or virtual, and make them run a single logical NIC. The bonding driver handles of all that work. It is present in all major distros and this bug is exploitable in the ones that allow usernamespaces for unprivileged users like in RedHat or Fedora; that is, it&amp;rsquo;s reachable from any code path that can send packets out of the bonding device.</description>
     </item>
     <item>
       <title>Notes on refcounting and Unix Garbage Collector in the Linux Kernel</title>
-      <link>http://localhost:1313/Qdiv7/posts/refcounting-linux-kernel/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</link>
       <pubDate>Tue, 23 Dec 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/refcounting-linux-kernel/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/refcounting-linux-kernel/</guid>
       <description>As a means of studying and getting to know more about the linux kernel, especially exploitation(LPE &amp;amp; RCE), i tried to make notes and go as far as i can in reviewing the unix garbage, or GC, collector, the io_uring subsystem, and some CVEs that showcase all of these.</description>
     </item>
     <item>
       <title>Notes on Linux Internals: The Slab Allocator</title>
-      <link>http://localhost:1313/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</link>
+      <link>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</link>
       <pubDate>Sat, 06 Sep 2025 00:00:00 +0000</pubDate>
-      <guid>http://localhost:1313/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</guid>
+      <guid>https://mohandacherir.github.io/Qdiv7/posts/notes-on-linux-internals-the-slab-allocator/</guid>
       <description>Introduction This post is some of my early notes on the SLUB allocator.&#xA;The kernel heap allocator is an important component responsible for satisfying allocation/de-allocation requests coming from different sources like device drivers, usermode processes, filesystems, etc.</description>
     </item>
   </channel>
