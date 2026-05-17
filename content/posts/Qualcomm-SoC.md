@@ -23,7 +23,7 @@ The threat model to my knowledge has at least 4 categories:
 ## Qualcomm GPU -  Adreno
 
 
-![](/Qdiv7/images/Qcom-basics/Screenshot-2.png)
+![](/Qdiv7/images/Qcom-basics/Screenshot-22.png)
 
 ### KGSL:
 _sources: [https://git.codelinaro.org/clo/la/platform/vendor/qcom/opensource/graphics-kernel](https://git.codelinaro.org/clo/la/platform/vendor/qcom/opensource/graphics-kernel/-/tree/gfx-kernel.lnx.16.0.r8-rel?ref_type=heads)
