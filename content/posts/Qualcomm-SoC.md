@@ -47,7 +47,7 @@ IOCTL_KGSL_GPUMEM_FREE_ID
 
 
 
-![](/Qdiv7/images/Qcom-basics/Screenshot-4.png)
+![](/Qdiv7/images/Qcom-basics/Screenshot-5.png)
 _source: https://chipsandcheese.com/p/correction-on-qualcomm-igpus
 
 
@@ -69,12 +69,12 @@ To offload heavy operations on the CPU, the Qualcomm SoC has integrated many DSP
 Their firmware is verified by the **TEE** before the DSPs starting.
 The DSPs firmware files are available to download either from the net or locally in `/lib/firmware/qcom`:
 
-![](/Qdiv7/images/Qcom-basics/Screenshot-5.png)
+![](/Qdiv7/images/Qcom-basics/Screenshot-6.png)
 
 The communication CPU <-> DSP  is done through shared memory and an RPC protocol, since the DSPs need to fetch the CPUs requests, and likewise the CPU needs to grab the results. 
 
 
-![](/Qdiv7/images/Qcom-basics/Screenshot-6.png)
+![](/Qdiv7/images/Qcom-basics/Screenshot-7.png)
 
 
 As documented in [fastRPC repo](https://github.com/qualcomm/fastrpc) :

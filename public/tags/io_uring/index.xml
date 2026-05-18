@@ -2,17 +2,17 @@
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title>Io_uring on Moe&#39;s VR blog</title>
-    <link>https://mohandacherir.github.io/Qdiv7/tags/io_uring/</link>
+    <link>http://localhost:1313/Qdiv7/tags/io_uring/</link>
     <description>Recent content in Io_uring on Moe&#39;s VR blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en</language>
     <lastBuildDate>Wed, 18 Mar 2026 00:00:00 +0000</lastBuildDate>
-    <atom:link href="https://mohandacherir.github.io/Qdiv7/tags/io_uring/index.xml" rel="self" type="application/rss+xml" />
+    <atom:link href="http://localhost:1313/Qdiv7/tags/io_uring/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>CVE-2024-0582, or Easy Kernel Exploitation</title>
-      <link>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</link>
+      <link>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</link>
       <pubDate>Wed, 18 Mar 2026 00:00:00 +0000</pubDate>
-      <guid>https://mohandacherir.github.io/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
+      <guid>http://localhost:1313/Qdiv7/posts/n-day-exploit-cve-2024/</guid>
       <description>Introduction io_uring has been a heavily targeted subsystem in the Linux kernel — at one point it constituted 60% of kCTF entries (source). As with most newly introduced features, io_uring — since its introduction in 2019 — has been very bug-prone.</description>
     </item>
   </channel>
